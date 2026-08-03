@@ -1,0 +1,17 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  html {
+    -webkit-font-smoothing: antialiased;
+  }
+  body {
+    @apply bg-slate-50 text-slate-800;
+    font-family: 'Inter', system-ui, -apple-system, sans-serif;
+  }
+}
+
+.border-3 {
+  border-width: 3px;
+}

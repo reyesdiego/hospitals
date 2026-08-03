@@ -1,0 +1,195 @@
+import uuid
+from datetime import date, datetime
+
+from pydantic import BaseModel, ConfigDict, Field
+
+from app.models.admission import (
+    AdmissionOrigin,
+    AdmissionStatus,
+    AdmissionType,
+    AuthorizationStatus,
+    ConsentType,
+    EpisodeStatus,
+)
+from app.models.bed import BedStatus
+from app.models.hospitalization import HospitalizationStatus
+from app.models.room import RoomStatus
+
+
+class ORMModel(BaseModel): model_config=ConfigDict(from_attributes=True)
+class PatientCreate(BaseModel):
+    first_name:str=Field(min_length=1,max_length=100); last_name:str=Field(min_length=1,max_length=100); document_type:str; document_number:str; birth_date:date|None=None
+class PatientRead(ORMModel):
+    id:uuid.UUID; first_name:str; last_name:str; document_type:str; document_number:str; birth_date:date|None; created_at:datetime
+class FacilityCreate(BaseModel): name:str; code:str
+class FacilityRead(ORMModel): id:uuid.UUID; name:str; code:str; created_at:datetime
+class ServiceCreate(BaseModel): name:str; code:str
+class ServiceUpdate(BaseModel): name:str; code:str
+class ServiceRead(ORMModel): id:uuid.UUID; name:str; code:str; created_at:datetime
+class RoomCreate(BaseModel):
+    facility_id: uuid.UUID
+    code: str = Field(min_length=1, max_length=50)
+    ward: str = Field(min_length=1, max_length=100)
+    status: RoomStatus = RoomStatus.AVAILABLE
+
+
+class RoomUpdate(BaseModel):
+    facility_id: uuid.UUID
+    code: str = Field(min_length=1, max_length=50)
+    ward: str = Field(min_length=1, max_length=100)
+    status: RoomStatus
+
+
+class RoomRead(ORMModel):
+    id: uuid.UUID
+    facility_id: uuid.UUID
+    code: str
+    ward: str
+    status: RoomStatus
+    created_at: datetime
+
+
+class BedCreate(BaseModel):
+    facility_id: uuid.UUID
+    room_id: uuid.UUID
+    code: str = Field(min_length=1, max_length=50)
+
+
+class BedUpdate(BaseModel):
+    facility_id: uuid.UUID
+    room_id: uuid.UUID
+    code: str = Field(min_length=1, max_length=50)
+
+
+class BedRoomAssignmentCreate(BaseModel):
+    room_id: uuid.UUID
+
+
+class BedRead(BaseModel):
+    id:uuid.UUID
+    facility_id:uuid.UUID
+    room_id:uuid.UUID
+    code:str
+    ward:str
+    room:str
+    status:BedStatus
+    patient:PatientRead|None=None
+class HospitalizationCreate(BaseModel): patient_id:uuid.UUID; admission_reason:str=Field(min_length=3,max_length=500)
+class HospitalizationRead(ORMModel): id:uuid.UUID; patient_id:uuid.UUID; status:HospitalizationStatus; admission_reason:str; admitted_at:datetime|None
+class BedAssignmentCreate(BaseModel): bed_id:uuid.UUID
+class BedStatusCreate(BaseModel): status:BedStatus; started_at:datetime|None=None; ended_at:datetime|None=None
+class BedAssignmentRead(ORMModel): id:uuid.UUID; hospitalization_id:uuid.UUID|None; bed_id:uuid.UUID; status:BedStatus; started_at:datetime; ended_at:datetime|None
+
+
+class PatientCoverageCreate(BaseModel):
+    patient_id: uuid.UUID | None = None
+    payer_name: str = Field(min_length=1, max_length=150)
+    plan_name: str | None = Field(default=None, max_length=150)
+    member_number: str | None = Field(default=None, max_length=80)
+    authorization_required: bool = False
+
+
+class PatientCoverageRead(ORMModel):
+    id: uuid.UUID
+    patient_id: uuid.UUID
+    payer_name: str
+    plan_name: str | None
+    member_number: str | None
+    authorization_required: bool
+    created_at: datetime
+
+
+class EpisodeRead(ORMModel):
+    id: uuid.UUID
+    patient_id: uuid.UUID
+    episode_number: str
+    status: EpisodeStatus
+    reason: str
+    opened_at: datetime
+    closed_at: datetime | None
+
+
+class AdmissionConsentCreate(BaseModel):
+    consent_type: ConsentType
+    signed_by: str = Field(min_length=1, max_length=150)
+    signed_at: datetime | None = None
+    notes: str | None = None
+
+
+class AdmissionConsentRead(ORMModel):
+    id: uuid.UUID
+    admission_id: uuid.UUID
+    consent_type: ConsentType
+    signed_by: str
+    signed_at: datetime | None
+    notes: str | None
+    created_at: datetime
+
+
+class AdmissionCreate(BaseModel):
+    patient_id: uuid.UUID
+    origin: AdmissionOrigin
+    admission_type: AdmissionType
+    identity_validated: bool = False
+    duplicate_checked: bool = False
+    coverage_id: uuid.UUID | None = None
+    coverage: PatientCoverageCreate | None = None
+    authorization_status: AuthorizationStatus = AuthorizationStatus.NOT_REQUIRED
+    authorization_number: str | None = Field(default=None, max_length=100)
+    responsible_contact_name: str = Field(min_length=1, max_length=150)
+    responsible_contact_phone: str = Field(min_length=1, max_length=80)
+    responsible_contact_relationship: str | None = Field(default=None, max_length=80)
+    admission_reason: str = Field(min_length=3, max_length=500)
+    responsible_physician: str = Field(min_length=1, max_length=150)
+    requesting_service_id: uuid.UUID | None = None
+    presumptive_diagnosis: str | None = Field(default=None, max_length=500)
+    requested_bed_id: uuid.UUID | None = None
+    consents: list[AdmissionConsentCreate] = Field(default_factory=list)
+    notes: str | None = None
+    confirm_admission: bool = True
+
+
+class AdmissionRead(ORMModel):
+    id: uuid.UUID
+    patient_id: uuid.UUID
+    episode_id: uuid.UUID | None
+    hospitalization_id: uuid.UUID | None
+    coverage_id: uuid.UUID | None
+    requesting_service_id: uuid.UUID | None
+    requested_bed_id: uuid.UUID | None
+    origin: AdmissionOrigin
+    admission_type: AdmissionType
+    status: AdmissionStatus
+    identity_validated: bool
+    duplicate_checked: bool
+    authorization_status: AuthorizationStatus
+    authorization_number: str | None
+    responsible_contact_name: str
+    responsible_contact_phone: str
+    responsible_contact_relationship: str | None
+    admission_reason: str
+    responsible_physician: str
+    presumptive_diagnosis: str | None
+    notes: str | None
+    admitted_at: datetime | None
+    administrative_discharged_at: datetime | None
+    created_at: datetime
+
+
+class AdmissionDashboardRead(AdmissionRead):
+    patient: PatientRead
+    episode: EpisodeRead | None = None
+    coverage: PatientCoverageRead | None = None
+    consents: list[AdmissionConsentRead] = Field(default_factory=list)
+
+
+class AdministrativeDischargeCreate(BaseModel):
+    notes: str | None = None
+
+
+class DuplicatePatientRead(BaseModel):
+    id: uuid.UUID
+    first_name: str
+    last_name: str
+    document_type: str
+    document_number: str
