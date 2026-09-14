@@ -8,5 +8,9 @@
 export interface BedCreate {
   facility_id: string;
   room_id: string;
+  /**
+     * @minLength 1
+     * @maxLength 50
+     */
   code: string;
 }

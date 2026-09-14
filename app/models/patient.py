@@ -1,7 +1,10 @@
 from datetime import date
+
 from sqlalchemy import Date, String, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column
-from app.models.base import Base, UUIDMixin, TimestampMixin
+
+from app.models.base import Base, TimestampMixin, UUIDMixin
+
 
 class Patient(UUIDMixin, TimestampMixin, Base):
     __tablename__="patients"

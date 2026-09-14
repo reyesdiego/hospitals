@@ -4,6 +4,7 @@ from datetime import UTC, datetime
 from fastapi import APIRouter, Response, status
 from sqlalchemy import and_, or_, select
 from sqlalchemy.exc import IntegrityError
+from sqlalchemy.orm import selectinload
 
 from app.api.dependencies import DbSession
 from app.core.exceptions import DomainError
@@ -12,12 +13,13 @@ from app.models.bed import Bed, BedAssignment
 from app.models.facility import Facility
 from app.models.hospitalization import Hospitalization
 from app.models.patient import Patient
+from app.models.professional import Professional, ProfessionalSpecialty, Specialty
 from app.models.room import Room
 from app.models.service import Service
 from app.schemas.domain import (
     AdministrativeDischargeCreate,
-    AdmissionCreate,
     AdmissionConsentRead,
+    AdmissionCreate,
     AdmissionDashboardRead,
     AdmissionRead,
     BedAssignmentCreate,
@@ -27,21 +29,28 @@ from app.schemas.domain import (
     BedRoomAssignmentCreate,
     BedStatusCreate,
     BedUpdate,
+    EpisodeRead,
     FacilityCreate,
     FacilityRead,
     HospitalizationCreate,
     HospitalizationRead,
-    EpisodeRead,
     PatientCoverageCreate,
     PatientCoverageRead,
     PatientCreate,
     PatientRead,
+    ProfessionalCreate,
+    ProfessionalRead,
+    ProfessionalSpecialtyCreate,
+    ProfessionalUpdate,
     RoomCreate,
     RoomRead,
     RoomUpdate,
     ServiceCreate,
     ServiceRead,
     ServiceUpdate,
+    SpecialtyCreate,
+    SpecialtyRead,
+    SpecialtyUpdate,
 )
 from app.services.admission import AdmissionWorkflowService
 from app.services.bed_assignment import BedAssignmentService
@@ -103,6 +112,170 @@ async def find_duplicate_patients(
             )
         ).all()
     )
+
+
+def professional_options():
+    return selectinload(Professional.specialty_links).selectinload(ProfessionalSpecialty.specialty)
+
+
+async def validate_professional_specialties(
+    specialties: list[ProfessionalSpecialtyCreate],
+    session: DbSession,
+) -> None:
+    specialty_ids = [item.specialty_id for item in specialties]
+    if len(set(specialty_ids)) != len(specialty_ids):
+        raise DomainError("Especialidad duplicada para el profesional", 409)
+    if not specialty_ids:
+        return
+    existing_ids = set(
+        (
+            await session.scalars(
+                select(Specialty.id).where(Specialty.id.in_(specialty_ids))
+            )
+        ).all()
+    )
+    if existing_ids != set(specialty_ids):
+        raise DomainError("Especialidad inexistente", 404)
+
+
+@router.get("/specialties", response_model=list[SpecialtyRead])
+async def list_specialties(session: DbSession):
+    return list((await session.scalars(select(Specialty).order_by(Specialty.name))).all())
+
+
+@router.post("/specialties", response_model=SpecialtyRead, status_code=201)
+async def create_specialty(payload: SpecialtyCreate, session: DbSession):
+    obj = Specialty(**payload.model_dump())
+    session.add(obj)
+
+    try:
+        await session.commit()
+    except IntegrityError as exc:
+        await session.rollback()
+        raise DomainError("Código de especialidad duplicado", 409) from exc
+
+    await session.refresh(obj)
+    return obj
+
+
+@router.put("/specialties/{specialty_id}", response_model=SpecialtyRead)
+async def update_specialty(specialty_id: uuid.UUID, payload: SpecialtyUpdate, session: DbSession):
+    obj = await session.get(Specialty, specialty_id)
+    if not obj:
+        raise DomainError("Especialidad inexistente", 404)
+
+    obj.name = payload.name
+    obj.code = payload.code
+
+    try:
+        await session.commit()
+    except IntegrityError as exc:
+        await session.rollback()
+        raise DomainError("Código de especialidad duplicado", 409) from exc
+
+    await session.refresh(obj)
+    return obj
+
+
+@router.delete("/specialties/{specialty_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_specialty(specialty_id: uuid.UUID, session: DbSession):
+    obj = await session.get(Specialty, specialty_id)
+    if not obj:
+        raise DomainError("Especialidad inexistente", 404)
+
+    try:
+        await session.delete(obj)
+        await session.commit()
+    except IntegrityError as exc:
+        await session.rollback()
+        raise DomainError("No se puede eliminar una especialidad asignada", 409) from exc
+
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+@router.get("/professionals", response_model=list[ProfessionalRead])
+async def list_professionals(session: DbSession):
+    return list(
+        (
+            await session.scalars(
+                select(Professional)
+                .options(professional_options())
+                .order_by(Professional.last_name, Professional.first_name)
+            )
+        ).unique().all()
+    )
+
+
+@router.post("/professionals", response_model=ProfessionalRead, status_code=201)
+async def create_professional(payload: ProfessionalCreate, session: DbSession):
+    await validate_professional_specialties(payload.specialties, session)
+    values = payload.model_dump(exclude={"specialties"})
+    obj = Professional(**values)
+    obj.specialty_links = [
+        ProfessionalSpecialty(
+            specialty_id=item.specialty_id,
+            license_number=item.license_number,
+        )
+        for item in payload.specialties
+    ]
+    session.add(obj)
+
+    try:
+        await session.commit()
+    except IntegrityError as exc:
+        await session.rollback()
+        raise DomainError("Documento o matrícula duplicada", 409) from exc
+
+    result = await session.scalar(
+        select(Professional).options(professional_options()).where(Professional.id == obj.id)
+    )
+    return result
+
+
+@router.put("/professionals/{professional_id}", response_model=ProfessionalRead)
+async def update_professional(
+    professional_id: uuid.UUID,
+    payload: ProfessionalUpdate,
+    session: DbSession,
+):
+    obj = await session.scalar(
+        select(Professional).options(professional_options()).where(Professional.id == professional_id)
+    )
+    if not obj:
+        raise DomainError("Profesional inexistente", 404)
+
+    await validate_professional_specialties(payload.specialties, session)
+    for field, value in payload.model_dump(exclude={"specialties"}).items():
+        setattr(obj, field, value)
+    obj.specialty_links = [
+        ProfessionalSpecialty(
+            specialty_id=item.specialty_id,
+            license_number=item.license_number,
+        )
+        for item in payload.specialties
+    ]
+
+    try:
+        await session.commit()
+    except IntegrityError as exc:
+        await session.rollback()
+        raise DomainError("Documento o matrícula duplicada", 409) from exc
+
+    result = await session.scalar(
+        select(Professional).options(professional_options()).where(Professional.id == professional_id)
+    )
+    return result
+
+
+@router.delete("/professionals/{professional_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_professional(professional_id: uuid.UUID, session: DbSession):
+    obj = await session.get(Professional, professional_id)
+    if not obj:
+        raise DomainError("Profesional inexistente", 404)
+
+    await session.delete(obj)
+    await session.commit()
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
 @router.get("/patients/{patient_id}/coverages", response_model=list[PatientCoverageRead])

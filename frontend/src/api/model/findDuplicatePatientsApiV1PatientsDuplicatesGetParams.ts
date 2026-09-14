@@ -5,6 +5,7 @@
  * OpenAPI spec version: 0.1.0
  */
 
-export interface AdministrativeDischargeCreate {
-  notes?: string | null;
-}
+export type FindDuplicatePatientsApiV1PatientsDuplicatesGetParams = {
+document_type: string;
+document_number: string;
+};

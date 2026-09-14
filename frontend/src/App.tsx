@@ -6,6 +6,7 @@ import AppLayout from '@/components/AppLayout';
 import LoginPage from '@/pages/LoginPage';
 import DashboardPage from '@/pages/DashboardPage';
 import PatientsPage from '@/pages/PatientsPage';
+import ProfessionalsPage from '@/pages/ProfessionalsPage';
 import BedsPage from '@/pages/BedsPage';
 import RoomsPage from '@/pages/RoomsPage';
 import FacilitiesPage from '@/pages/FacilitiesPage';
@@ -49,6 +50,7 @@ function AppRoutes() {
       >
         <Route path="/dashboard" element={<DashboardPage />} />
         <Route path="/patients" element={<PatientsPage />} />
+        <Route path="/professionals" element={<ProfessionalsPage />} />
         <Route path="/admissions" element={<AdmissionPanelPage />} />
         <Route path="/beds" element={<BedsPage />} />
         <Route path="/rooms" element={<RoomsPage />} />

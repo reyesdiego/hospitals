@@ -5,6 +5,9 @@
  * OpenAPI spec version: 0.1.0
  */
 
-export interface AdministrativeDischargeCreate {
-  notes?: string | null;
+export interface SpecialtyRead {
+  id: string;
+  name: string;
+  code: string;
+  created_at: string;
 }

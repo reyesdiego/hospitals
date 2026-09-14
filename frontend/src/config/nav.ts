@@ -41,6 +41,12 @@ export const NAV_ITEMS: NavConfig[] = [
     roles: ['admin', 'doctor', 'nurse', 'receptionist'],
   },
   {
+    label: 'Profesionales',
+    path: '/professionals',
+    icon: Stethoscope,
+    roles: ['admin', 'doctor', 'nurse', 'receptionist'],
+  },
+  {
     label: 'Admision',
     path: '/admissions',
     icon: ClipboardCheck,

@@ -1,7 +1,6 @@
 import uuid
 from datetime import UTC, datetime
 
-from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.exceptions import DomainError
@@ -18,7 +17,7 @@ from app.models.bed import BedStatus
 from app.models.hospitalization import Hospitalization, HospitalizationStatus
 from app.models.patient import Patient
 from app.models.service import Service
-from app.schemas.domain import AdmissionCreate, AdministrativeDischargeCreate
+from app.schemas.domain import AdministrativeDischargeCreate, AdmissionCreate
 from app.services.bed_assignment import BedAssignmentService
 
 

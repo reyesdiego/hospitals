@@ -1,8 +1,13 @@
-import enum, uuid
+import enum
+import uuid
 from datetime import datetime
+
 from sqlalchemy import DateTime, Enum, ForeignKey, Index, String, text
 from sqlalchemy.orm import Mapped, mapped_column
-from app.models.base import Base, UUIDMixin, TimestampMixin
+
+from app.models.base import Base, TimestampMixin, UUIDMixin
+
+
 class BedStatus(str, enum.Enum):
     AVAILABLE="AVAILABLE"; RESERVED="RESERVED"; OCCUPIED="OCCUPIED"; PENDING_CLEANING="PENDING_CLEANING"; BLOCKED="BLOCKED"; MAINTENANCE="MAINTENANCE"
 class Bed(UUIDMixin, TimestampMixin, Base):
@@ -10,7 +15,11 @@ class Bed(UUIDMixin, TimestampMixin, Base):
     facility_id: Mapped[uuid.UUID]=mapped_column(ForeignKey("facilities.id", ondelete="RESTRICT"), index=True)
     code: Mapped[str]=mapped_column(String(50))
     ward: Mapped[str]=mapped_column(String(100))
-    room_id: Mapped[uuid.UUID]=mapped_column(ForeignKey("rooms.id", ondelete="RESTRICT"), index=True)
+    room_id: Mapped[uuid.UUID]=mapped_column(
+        ForeignKey("rooms.id", ondelete="RESTRICT"),
+        nullable=False,
+        index=True,
+    )
     __table_args__=(Index("uq_beds_facility_code","facility_id","code",unique=True),)
 class BedAssignment(UUIDMixin, TimestampMixin, Base):
     __tablename__="bed_assignments"

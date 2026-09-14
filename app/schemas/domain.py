@@ -21,6 +21,37 @@ class PatientCreate(BaseModel):
     first_name:str=Field(min_length=1,max_length=100); last_name:str=Field(min_length=1,max_length=100); document_type:str; document_number:str; birth_date:date|None=None
 class PatientRead(ORMModel):
     id:uuid.UUID; first_name:str; last_name:str; document_type:str; document_number:str; birth_date:date|None; created_at:datetime
+class SpecialtyCreate(BaseModel): name:str=Field(min_length=1,max_length=150); code:str=Field(min_length=1,max_length=30)
+class SpecialtyUpdate(BaseModel): name:str=Field(min_length=1,max_length=150); code:str=Field(min_length=1,max_length=30)
+class SpecialtyRead(ORMModel): id:uuid.UUID; name:str; code:str; created_at:datetime
+class ProfessionalSpecialtyCreate(BaseModel):
+    specialty_id:uuid.UUID
+    license_number:str=Field(min_length=1,max_length=80)
+class ProfessionalSpecialtyRead(ORMModel):
+    id:uuid.UUID
+    specialty_id:uuid.UUID
+    specialty:SpecialtyRead
+    license_number:str
+    created_at:datetime
+class ProfessionalCreate(BaseModel):
+    first_name:str=Field(min_length=1,max_length=100)
+    last_name:str=Field(min_length=1,max_length=100)
+    document_type:str=Field(min_length=1,max_length=30)
+    document_number:str=Field(min_length=1,max_length=50)
+    email:str|None=Field(default=None,max_length=150)
+    phone:str|None=Field(default=None,max_length=80)
+    specialties:list[ProfessionalSpecialtyCreate]=Field(default_factory=list)
+class ProfessionalUpdate(ProfessionalCreate): pass
+class ProfessionalRead(ORMModel):
+    id:uuid.UUID
+    first_name:str
+    last_name:str
+    document_type:str
+    document_number:str
+    email:str|None
+    phone:str|None
+    specialties:list[ProfessionalSpecialtyRead]=Field(default_factory=list)
+    created_at:datetime
 class FacilityCreate(BaseModel): name:str; code:str
 class FacilityRead(ORMModel): id:uuid.UUID; name:str; code:str; created_at:datetime
 class ServiceCreate(BaseModel): name:str; code:str

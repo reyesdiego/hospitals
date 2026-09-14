@@ -1,6 +1,8 @@
 from sqlalchemy import String
 from sqlalchemy.orm import Mapped, mapped_column
-from app.models.base import Base, UUIDMixin, TimestampMixin
+
+from app.models.base import Base, TimestampMixin, UUIDMixin
+
 
 class Service(UUIDMixin, TimestampMixin, Base):
     __tablename__="services"

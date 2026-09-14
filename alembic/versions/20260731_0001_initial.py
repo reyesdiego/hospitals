@@ -1,8 +1,11 @@
 """initial schema"""
 import uuid
-from alembic import op
+
 import sqlalchemy as sa
 from sqlalchemy.dialects import postgresql
+
+from alembic import op
+
 revision="20260731_0001"; down_revision=None; branch_labels=None; depends_on=None
 def upgrade():
     hs=postgresql.ENUM("PENDING_BED","IN_PROGRESS","CLINICALLY_DISCHARGED","CLOSED","CANCELLED",name="hospitalization_status",create_type=False)
@@ -48,15 +51,15 @@ def upgrade():
                     sa.Column("id",sa.Uuid(),primary_key=True),
                     sa.Column("hospitalization_id",sa.Uuid(),sa.ForeignKey("hospitalizations.id",ondelete="RESTRICT"),nullable=True),
                     sa.Column("bed_id",sa.Uuid(),sa.ForeignKey("beds.id",ondelete="RESTRICT"),nullable=False),
-                    sa.Column("start_at",sa.DateTime(timezone=True),nullable=False),
-                    sa.Column("end_at",sa.DateTime(timezone=True)),
+                    sa.Column("started_at",sa.DateTime(timezone=True),nullable=False),
+                    sa.Column("ended_at",sa.DateTime(timezone=True)),
                     sa.Column("status",bs,nullable=False),
                     sa.Column("created_at",sa.DateTime(timezone=True),server_default=sa.func.now()),
                     sa.Column("updated_at",sa.DateTime(timezone=True),server_default=sa.func.now())
                     )
     op.create_index("uq_active_assignment_per_bed","bed_assignments",["bed_id"],unique=True,postgresql_where=sa.text("ended_at IS NULL"))
-    op.create_index("uq_active_bed_per_hospitalization","bed_assignments",["hospitalization_id"],unique=True,postgresql_where=sa.text("ended_at IS NULL"))
+    op.create_index("uq_active_bed_per_hospitalization","bed_assignments",["hospitalization_id"],unique=True,postgresql_where=sa.text("hospitalization_id IS NOT NULL AND ended_at IS NULL"))
 
 def downgrade():
-    op.drop_table("bed_assignments"); op.drop_table("beds"); op.drop_table("hospitalizations"); op.drop_table("services"); op.drop_table("facilities"); op.drop_table("patients")
-    postgresql.ENUM(name="bed_status").drop(op.get_bind(),checkfirst=True); postgresql.ENUM(name="hospitalization_status").drop(op.get_bind(),checkfirst=True)
+    op.drop_table("bed_assignments"); op.drop_table("beds"); op.drop_table("rooms"); op.drop_table("hospitalizations"); op.drop_table("services"); op.drop_table("facilities"); op.drop_table("patients")
+    postgresql.ENUM(name="room_status").drop(op.get_bind(),checkfirst=True); postgresql.ENUM(name="bed_status").drop(op.get_bind(),checkfirst=True); postgresql.ENUM(name="hospitalization_status").drop(op.get_bind(),checkfirst=True)

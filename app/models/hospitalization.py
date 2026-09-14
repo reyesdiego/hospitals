@@ -1,8 +1,13 @@
-import enum, uuid
+import enum
+import uuid
 from datetime import datetime
+
 from sqlalchemy import DateTime, Enum, ForeignKey, String
 from sqlalchemy.orm import Mapped, mapped_column
-from app.models.base import Base, UUIDMixin, TimestampMixin
+
+from app.models.base import Base, TimestampMixin, UUIDMixin
+
+
 class HospitalizationStatus(str, enum.Enum):
     PENDING_BED="PENDING_BED"; IN_PROGRESS="IN_PROGRESS"; CLINICALLY_DISCHARGED="CLINICALLY_DISCHARGED"; CLOSED="CLOSED"; CANCELLED="CANCELLED"
 class Hospitalization(UUIDMixin, TimestampMixin, Base):
