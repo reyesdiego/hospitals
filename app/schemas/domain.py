@@ -11,7 +11,7 @@ from app.models.admission import (
     ConsentType,
     EpisodeStatus,
 )
-from app.models.bed import BedStatus
+from app.models.bed import BedStatus, TransferStatus
 from app.models.hospitalization import HospitalizationStatus
 from app.models.room import RoomStatus
 
@@ -19,6 +19,7 @@ from app.models.room import RoomStatus
 class ORMModel(BaseModel): model_config=ConfigDict(from_attributes=True)
 class PatientCreate(BaseModel):
     first_name:str=Field(min_length=1,max_length=100); last_name:str=Field(min_length=1,max_length=100); document_type:str; document_number:str; birth_date:date|None=None
+class PatientUpdate(PatientCreate): pass
 class PatientRead(ORMModel):
     id:uuid.UUID; first_name:str; last_name:str; document_type:str; document_number:str; birth_date:date|None; created_at:datetime
 class SpecialtyCreate(BaseModel): name:str=Field(min_length=1,max_length=150); code:str=Field(min_length=1,max_length=30)
@@ -106,10 +107,43 @@ class BedRead(BaseModel):
     status:BedStatus
     patient:PatientRead|None=None
 class HospitalizationCreate(BaseModel): patient_id:uuid.UUID; admission_reason:str=Field(min_length=3,max_length=500)
-class HospitalizationRead(ORMModel): id:uuid.UUID; patient_id:uuid.UUID; status:HospitalizationStatus; admission_reason:str; admitted_at:datetime|None
-class BedAssignmentCreate(BaseModel): bed_id:uuid.UUID
+class HospitalizationRead(ORMModel):
+    id:uuid.UUID
+    patient_id:uuid.UUID
+    status:HospitalizationStatus
+    admission_reason:str
+    admitted_at:datetime|None
+    discharged_at:datetime|None
+class BedAssignmentCreate(BaseModel):
+    bed_id:uuid.UUID
+    assignment_reason:str|None=Field(default=None,max_length=500)
+    assigned_by:str|None=Field(default=None,max_length=150)
 class BedStatusCreate(BaseModel): status:BedStatus; started_at:datetime|None=None; ended_at:datetime|None=None
-class BedAssignmentRead(ORMModel): id:uuid.UUID; hospitalization_id:uuid.UUID|None; bed_id:uuid.UUID; status:BedStatus; started_at:datetime; ended_at:datetime|None
+class BedAssignmentRead(ORMModel):
+    id:uuid.UUID
+    hospitalization_id:uuid.UUID|None
+    bed_id:uuid.UUID
+    status:BedStatus
+    started_at:datetime
+    ended_at:datetime|None
+    assignment_reason:str|None=None
+    assigned_by:str|None=None
+    ended_by:str|None=None
+class BedTransferCreate(BaseModel):
+    destination_bed_id:uuid.UUID
+    reason:str|None=Field(default=None,max_length=500)
+    requested_by:str|None=Field(default=None,max_length=150)
+    completed_by:str|None=Field(default=None,max_length=150)
+class BedTransferRead(ORMModel):
+    id:uuid.UUID
+    hospitalization_id:uuid.UUID
+    from_bed_id:uuid.UUID
+    to_bed_id:uuid.UUID
+    status:TransferStatus
+    requested_at:datetime
+    completed_at:datetime|None
+    cancelled_at:datetime|None
+    reason:str|None
 
 
 class PatientCoverageCreate(BaseModel):

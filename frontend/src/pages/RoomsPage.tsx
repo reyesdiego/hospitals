@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { getDefault } from '@/api/endpoints/default/default';
-import type { RoomCreate, RoomRead, RoomStatus, RoomUpdate } from '@/api/model';
+import type { BedStatus, RoomCreate, RoomRead, RoomStatus, RoomUpdate } from '@/api/model';
 import { Badge, Card, EmptyState, ErrorState, PageHeader, Spinner } from '@/components/ui';
 import Modal from '@/components/Modal';
 import { DoorOpen, Pencil, Plus, Trash2 } from 'lucide-react';
@@ -30,6 +30,20 @@ const emptyForm: RoomUpdate = {
   ward: '',
   status: 'AVAILABLE',
 };
+
+function roomDisplayStatus(
+  room: RoomRead,
+  beds: { status: BedStatus }[],
+  availableBedCount: number,
+): RoomStatus {
+  if (beds.length === 0 || availableBedCount > 0) return room.status;
+  if (beds.some((bed) => bed.status === 'PENDING_CLEANING')) return 'PENDING_CLEANING';
+  if (beds.some((bed) => bed.status === 'OCCUPIED')) return 'OCCUPIED';
+  if (beds.some((bed) => bed.status === 'MAINTENANCE')) return 'MAINTENANCE';
+  if (beds.some((bed) => bed.status === 'BLOCKED')) return 'BLOCKED';
+  if (beds.some((bed) => bed.status === 'RESERVED')) return 'RESERVED';
+  return room.status;
+}
 
 export default function RoomsPage() {
   const api = getDefault();
@@ -170,7 +184,10 @@ export default function RoomsPage() {
                 <tbody className="divide-y divide-slate-100 bg-white">
                   {rooms.map((room) => {
                     const facility = facilities.find((item) => item.id === room.facility_id);
-                    const bedCount = beds.filter((bed) => bed.room_id === room.id).length;
+                    const roomBeds = beds.filter((bed) => bed.room_id === room.id);
+                    const bedCount = roomBeds.length;
+                    const availableBedCount = roomBeds.filter((bed) => bed.status === 'AVAILABLE').length;
+                    const displayStatus = roomDisplayStatus(room, roomBeds, availableBedCount);
                     return (
                       <tr key={room.id} className="hover:bg-slate-50">
                         <td className="px-5 py-4">
@@ -192,10 +209,12 @@ export default function RoomsPage() {
                         <td className="px-5 py-4">
                           <div className="flex items-center gap-2">
                             <Badge
-                              status={STATUS_LABELS[room.status]}
-                              color={STATUS_COLORS[room.status]}
+                              status={STATUS_LABELS[displayStatus]}
+                              color={STATUS_COLORS[displayStatus]}
                             />
-                            <span className="text-sm text-slate-500">{bedCount} cama(s)</span>
+                            <span className="text-sm text-slate-500">
+                              {availableBedCount}/{bedCount} cama(s) disponible(s)
+                            </span>
                           </div>
                         </td>
                         <td className="px-5 py-4">

@@ -7,4 +7,6 @@
 
 export interface BedAssignmentCreate {
   bed_id: string;
+  assignment_reason?: string | null;
+  assigned_by?: string | null;
 }

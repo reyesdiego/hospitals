@@ -3,7 +3,7 @@ import { NavLink, Outlet, useNavigate } from 'react-router-dom';
 import { useAuth } from '@/auth/AuthContext';
 import { ROLE_LABELS } from '@/auth/types';
 import { NAV_ITEMS } from '@/config/nav';
-import { HeartPulse, LogOut, Menu, X, ChevronDown } from 'lucide-react';
+import { HeartPulse, LogOut, Menu, X } from 'lucide-react';
 
 export default function AppLayout() {
   const { user, logout } = useAuth();

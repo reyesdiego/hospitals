@@ -1,5 +1,5 @@
 from app.models.admission import Admission, AdmissionConsent, Episode, PatientCoverage
-from app.models.bed import Bed, BedAssignment
+from app.models.bed import Bed, BedAssignment, BedTransfer
 from app.models.facility import Facility
 from app.models.hospitalization import Hospitalization
 from app.models.patient import Patient
@@ -12,6 +12,7 @@ __all__ = [
     "AdmissionConsent",
     "Bed",
     "BedAssignment",
+    "BedTransfer",
     "Episode",
     "Facility",
     "Hospitalization",

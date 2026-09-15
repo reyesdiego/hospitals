@@ -7,5 +7,9 @@
 
 export interface ProfessionalSpecialtyCreate {
   specialty_id: string;
+  /**
+     * @minLength 1
+     * @maxLength 80
+     */
   license_number: string;
 }

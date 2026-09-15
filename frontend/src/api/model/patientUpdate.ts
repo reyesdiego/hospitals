@@ -4,9 +4,8 @@
  * Hospital Internment API
  * OpenAPI spec version: 0.1.0
  */
-import type { ProfessionalSpecialtyCreate } from './professionalSpecialtyCreate';
 
-export interface ProfessionalCreate {
+export interface PatientUpdate {
   /**
      * @minLength 1
      * @maxLength 100
@@ -17,17 +16,7 @@ export interface ProfessionalCreate {
      * @maxLength 100
      */
   last_name: string;
-  /**
-     * @minLength 1
-     * @maxLength 30
-     */
   document_type: string;
-  /**
-     * @minLength 1
-     * @maxLength 50
-     */
   document_number: string;
-  email?: string | null;
-  phone?: string | null;
-  specialties?: ProfessionalSpecialtyCreate[];
+  birth_date?: string | null;
 }

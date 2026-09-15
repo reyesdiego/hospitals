@@ -7,11 +7,27 @@
 import type { ProfessionalSpecialtyCreate } from './professionalSpecialtyCreate';
 
 export interface ProfessionalUpdate {
+  /**
+     * @minLength 1
+     * @maxLength 100
+     */
   first_name: string;
+  /**
+     * @minLength 1
+     * @maxLength 100
+     */
   last_name: string;
+  /**
+     * @minLength 1
+     * @maxLength 30
+     */
   document_type: string;
+  /**
+     * @minLength 1
+     * @maxLength 50
+     */
   document_number: string;
-  email: string | null;
-  phone: string | null;
-  specialties: ProfessionalSpecialtyCreate[];
+  email?: string | null;
+  phone?: string | null;
+  specialties?: ProfessionalSpecialtyCreate[];
 }

@@ -43,6 +43,29 @@ function now(): string {
   return new Date().toISOString();
 }
 
+function toAdmissionRead(admission: AdmissionDashboardRead): AdmissionRead {
+  const read: Partial<AdmissionDashboardRead> = { ...admission };
+  delete read.patient;
+  delete read.episode;
+  delete read.coverage;
+  delete read.consents;
+  return read as AdmissionRead;
+}
+
+function admissionWithEffectiveStatus(
+  admission: AdmissionDashboardRead,
+  db: MockDB,
+): AdmissionDashboardRead {
+  if (admission.status !== 'PENDING_BED' || !admission.hospitalization_id) return admission;
+  const hospitalization = db.hospitalizations.find((item) => item.id === admission.hospitalization_id);
+  if (hospitalization?.status !== 'IN_PROGRESS') return admission;
+  return {
+    ...admission,
+    status: 'ADMITTED' as AdmissionStatus,
+    admitted_at: admission.admitted_at ?? hospitalization.admitted_at,
+  };
+}
+
 function seed(): MockDB {
   const facilities: FacilityRead[] = [
     {
@@ -207,6 +230,7 @@ function seed(): MockDB {
       status: 'IN_PROGRESS' as HospitalizationStatus,
       admission_reason: 'Dolor toracico agudo - evaluacion cardiaca',
       admitted_at: '2025-07-20T14:30:00Z',
+      discharged_at: null,
     },
     {
       id: 'hosp-002',
@@ -214,6 +238,7 @@ function seed(): MockDB {
       status: 'PENDING_BED' as HospitalizationStatus,
       admission_reason: 'Post-operatorio - observacion',
       admitted_at: null,
+      discharged_at: null,
     },
   ];
 
@@ -341,6 +366,34 @@ function setupMockAdapter() {
       db.patients.push(patient);
       saveDB(db);
       return { data: patient, status: 201, statusText: 'Created', headers: {}, config };
+    }
+    const patientMatch = url.match(/^\/api\/v1\/patients\/([^/]+)$/);
+    if (patientMatch && method === 'put') {
+      const patient = db.patients.find((item) => item.id === patientMatch[1]);
+      if (!patient) {
+        return Promise.reject({ response: { status: 404, data: { detail: 'Paciente inexistente' } }, config });
+      }
+      const body = JSON.parse(config.data);
+      patient.first_name = body.first_name;
+      patient.last_name = body.last_name;
+      patient.document_type = body.document_type;
+      patient.document_number = body.document_number;
+      patient.birth_date = body.birth_date ?? null;
+      saveDB(db);
+      return { data: patient, status: 200, statusText: 'OK', headers: {}, config };
+    }
+    if (patientMatch && method === 'delete') {
+      const patientId = patientMatch[1];
+      const hasClinicalRecords =
+        db.hospitalizations.some((item) => item.patient_id === patientId) ||
+        db.admissions.some((item) => item.patient_id === patientId) ||
+        db.coverages.some((item) => item.patient_id === patientId);
+      if (hasClinicalRecords) {
+        return Promise.reject({ response: { status: 409, data: { detail: 'No se puede eliminar un paciente con registros clínicos asociados' } }, config });
+      }
+      db.patients = db.patients.filter((item) => item.id !== patientId);
+      saveDB(db);
+      return { data: undefined, status: 204, statusText: 'No Content', headers: {}, config };
     }
     if (url.startsWith('/api/v1/patients/duplicates') && method === 'get') {
       const params = config.params ?? {};
@@ -501,8 +554,28 @@ function setupMockAdapter() {
       saveDB(db);
       return { data: bed, status: 200, statusText: 'OK', headers: {}, config };
     }
+    const bedStatusMatch = url.match(/^\/api\/v1\/beds\/([^/]+)\/status$/);
+    if (bedStatusMatch && method === 'post') {
+      const bed = db.beds.find((item) => item.id === bedStatusMatch[1]);
+      if (!bed) {
+        return Promise.reject({ response: { status: 404, data: { detail: 'Cama inexistente' } }, config });
+      }
+      const body = JSON.parse(config.data);
+      if (body.status === 'OCCUPIED') {
+        return Promise.reject({ response: { status: 409, data: { detail: 'La ocupación se crea desde una internación' } }, config });
+      }
+      bed.status = body.status;
+      if (body.status === 'AVAILABLE') {
+        bed.patient = null;
+      }
+      saveDB(db);
+      return { data: null, status: 200, statusText: 'OK', headers: {}, config };
+    }
 
     // Hospitalizations
+    if (url === '/api/v1/hospitalizations' && method === 'get') {
+      return { data: db.hospitalizations, status: 200, statusText: 'OK', headers: {}, config };
+    }
     if (url === '/api/v1/hospitalizations' && method === 'post') {
       const body = JSON.parse(config.data);
       const hosp: HospitalizationRead = {
@@ -511,15 +584,37 @@ function setupMockAdapter() {
         status: 'PENDING_BED' as HospitalizationStatus,
         admission_reason: body.admission_reason,
         admitted_at: null,
+        discharged_at: null,
       };
       db.hospitalizations.push(hosp);
       saveDB(db);
       return { data: hosp, status: 201, statusText: 'Created', headers: {}, config };
     }
+    const hospitalizationBedAssignmentsMatch = url.match(
+      /^\/api\/v1\/hospitalizations\/([^/]+)\/bed-assignments$/,
+    );
+    if (hospitalizationBedAssignmentsMatch && method === 'get') {
+      const hospId = hospitalizationBedAssignmentsMatch[1];
+      return {
+        data: db.bedAssignments
+          .filter((assignment) => assignment.hospitalization_id === hospId)
+          .sort((a, b) => b.started_at.localeCompare(a.started_at)),
+        status: 200,
+        statusText: 'OK',
+        headers: {},
+        config,
+      };
+    }
 
     // Admissions
     if (url === '/api/v1/admissions' && method === 'get') {
-      return { data: db.admissions, status: 200, statusText: 'OK', headers: {}, config };
+      return {
+        data: db.admissions.map((admission) => admissionWithEffectiveStatus(admission, db)),
+        status: 200,
+        statusText: 'OK',
+        headers: {},
+        config,
+      };
     }
     if (url === '/api/v1/admissions' && method === 'post') {
       const body = JSON.parse(config.data);
@@ -545,6 +640,7 @@ function setupMockAdapter() {
         status: body.requested_bed_id ? 'IN_PROGRESS' : 'PENDING_BED',
         admission_reason: body.admission_reason,
         admitted_at: body.requested_bed_id ? now() : null,
+        discharged_at: null,
       };
       db.hospitalizations.push(hospitalization);
       const admission: AdmissionDashboardRead = {
@@ -593,7 +689,7 @@ function setupMockAdapter() {
           created_at: now(),
         })),
       };
-      admission.consents = admission.consents.map((consent) => ({
+      admission.consents = (admission.consents ?? []).map((consent) => ({
         ...consent,
         admission_id: admission.id,
       }));
@@ -606,8 +702,7 @@ function setupMockAdapter() {
       }
       db.admissions.unshift(admission);
       saveDB(db);
-      const { patient: _patient, episode: _episode, coverage: _coverage, consents: _consents, ...read } = admission;
-      return { data: read as AdmissionRead, status: 201, statusText: 'Created', headers: {}, config };
+      return { data: toAdmissionRead(admission), status: 201, statusText: 'Created', headers: {}, config };
     }
     const dischargeMatch = url.match(/^\/api\/v1\/admissions\/([^/]+)\/administrative-discharge$/);
     if (dischargeMatch && method === 'post') {
@@ -618,8 +713,7 @@ function setupMockAdapter() {
       admission.status = 'ADMINISTRATIVE_DISCHARGE';
       admission.administrative_discharged_at = now();
       saveDB(db);
-      const { patient: _patient, episode: _episode, coverage: _coverage, consents: _consents, ...read } = admission;
-      return { data: read as AdmissionRead, status: 200, statusText: 'OK', headers: {}, config };
+      return { data: toAdmissionRead(admission), status: 200, statusText: 'OK', headers: {}, config };
     }
 
     // Bed assignment
@@ -640,6 +734,15 @@ function setupMockAdapter() {
         hosp.admitted_at = now();
         const patient = db.patients.find((p) => p.id === hosp.patient_id);
         bed.patient = patient ?? null;
+      }
+      const admission = db.admissions.find((item) => item.hospitalization_id === hospId);
+      if (
+        admission &&
+        admission.status !== 'ADMINISTRATIVE_DISCHARGE' &&
+        admission.status !== 'CANCELLED'
+      ) {
+        admission.status = 'ADMITTED' as AdmissionStatus;
+        admission.admitted_at = admission.admitted_at ?? now();
       }
       const assignment: BedAssignmentRead = {
         id: uuid(),
@@ -671,7 +774,10 @@ function setupMockAdapter() {
           bed.patient = null;
         }
         const hosp = db.hospitalizations.find((h) => h.id === hospId);
-        if (hosp) hosp.status = 'CLINICALLY_DISCHARGED' as HospitalizationStatus;
+        if (hosp) {
+          hosp.status = 'CLINICALLY_DISCHARGED' as HospitalizationStatus;
+          hosp.discharged_at = now();
+        }
         saveDB(db);
         return { data: assignment, status: 200, statusText: 'OK', headers: {}, config };
       }

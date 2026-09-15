@@ -9,6 +9,22 @@ import { HospitalizationStatusBadge } from '@/components/StatusBadges';
 import Modal from '@/components/Modal';
 import { ArrowLeft, BedDouble, Unlock, User, Calendar, FileText } from 'lucide-react';
 
+function formatDateTime(value: string | null | undefined) {
+  return value ? new Date(value).toLocaleString('es-ES') : null;
+}
+
+function ageAtDate(birthDate: string | null | undefined, referenceDate: string | null | undefined) {
+  if (!birthDate || !referenceDate) return null;
+  const birth = new Date(`${birthDate}T00:00:00`);
+  const reference = new Date(referenceDate);
+  let age = reference.getFullYear() - birth.getFullYear();
+  const monthDelta = reference.getMonth() - birth.getMonth();
+  if (monthDelta < 0 || (monthDelta === 0 && reference.getDate() < birth.getDate())) {
+    age -= 1;
+  }
+  return age >= 0 ? age : null;
+}
+
 export default function HospitalizationDetailPage() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
@@ -28,6 +44,14 @@ export default function HospitalizationDetailPage() {
     queryKey: ['beds'],
     queryFn: () => api.listBedsApiV1BedsGet(),
   });
+  const bedAssignmentsQuery = useQuery({
+    queryKey: ['hospitalization-bed-assignments', id],
+    queryFn: () =>
+      api.listHospitalizationBedAssignmentsApiV1HospitalizationsHospitalizationIdBedAssignmentsGet(
+        id ?? '',
+      ),
+    enabled: Boolean(id),
+  });
   const hospitalizationsQuery = useQuery({
     queryKey: ['hospitalizations'],
     queryFn: () => api.listHospitalizationsApiV1HospitalizationsGet(),
@@ -43,6 +67,7 @@ export default function HospitalizationDetailPage() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['beds'] });
       queryClient.invalidateQueries({ queryKey: ['hospitalizations'] });
+      queryClient.invalidateQueries({ queryKey: ['hospitalization-bed-assignments', id] });
       navigate('/hospitalizations');
     },
   });
@@ -55,12 +80,18 @@ export default function HospitalizationDetailPage() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['beds'] });
       queryClient.invalidateQueries({ queryKey: ['hospitalizations'] });
+      queryClient.invalidateQueries({ queryKey: ['hospitalization-bed-assignments', id] });
       setAssignOpen(false);
       setAssignBedId('');
     },
   });
 
-  if (patientsQuery.isLoading || bedsQuery.isLoading || hospitalizationsQuery.isLoading) {
+  if (
+    patientsQuery.isLoading ||
+    bedsQuery.isLoading ||
+    hospitalizationsQuery.isLoading ||
+    bedAssignmentsQuery.isLoading
+  ) {
     return <Spinner />;
   }
   if (!hosp) {
@@ -82,6 +113,9 @@ export default function HospitalizationDetailPage() {
   const patientName = patient
     ? `${patient.first_name} ${patient.last_name}`
     : 'Paciente desconocido';
+  const patientAgeAtAdmission = ageAtDate(patient?.birth_date, hosp.admitted_at);
+  const bedAssignments = bedAssignmentsQuery.data ?? [];
+  const bedsById = new Map((bedsQuery.data ?? []).map((bed) => [bed.id, bed]));
 
   const handleAssign = (e: React.FormEvent) => {
     e.preventDefault();
@@ -127,9 +161,24 @@ export default function HospitalizationDetailPage() {
                 <Calendar className="h-4 w-4 text-slate-400" />
                 <span className="text-sm text-slate-500">Fecha de ingreso:</span>
                 <span className="text-sm font-semibold text-slate-700">
-                  {hosp.admitted_at
-                    ? new Date(hosp.admitted_at).toLocaleString('es-ES')
-                    : 'Pendiente de asignacion de cama'}
+                  {formatDateTime(hosp.admitted_at) ?? 'Pendiente de asignacion de cama'}
+                </span>
+              </div>
+              <div className="flex items-center gap-2 rounded-lg bg-slate-50 px-4 py-3">
+                <Calendar className="h-4 w-4 text-slate-400" />
+                <span className="text-sm text-slate-500">Fecha de alta:</span>
+                <span className="text-sm font-semibold text-slate-700">
+                  {formatDateTime(hosp.discharged_at) ?? 'Sin alta registrada'}
+                </span>
+              </div>
+              <div className="flex items-center justify-between rounded-lg bg-slate-50 px-4 py-3">
+                <span className="text-sm font-medium text-slate-500">
+                  Edad al momento de la internacion
+                </span>
+                <span className="text-sm font-semibold text-slate-700">
+                  {patientAgeAtAdmission !== null
+                    ? `${patientAgeAtAdmission} años`
+                    : 'No disponible'}
                 </span>
               </div>
             </div>
@@ -142,6 +191,47 @@ export default function HospitalizationDetailPage() {
               Gestion de cama
             </h3>
             <div className="space-y-4">
+              <div className="rounded-lg border border-slate-100">
+                <div className="border-b border-slate-100 px-4 py-3">
+                  <p className="text-sm font-semibold text-slate-700">
+                    Camas y habitaciones utilizadas
+                  </p>
+                </div>
+                {bedAssignments.length === 0 ? (
+                  <p className="px-4 py-3 text-sm text-slate-400">
+                    No hay asignaciones de cama registradas.
+                  </p>
+                ) : (
+                  <div className="divide-y divide-slate-100">
+                    {bedAssignments.map((assignment) => {
+                      const bed = bedsById.get(assignment.bed_id);
+                      return (
+                        <div key={assignment.id} className="px-4 py-3">
+                          <div className="flex items-start justify-between gap-3">
+                            <div>
+                              <p className="text-sm font-semibold text-slate-700">
+                                {bed?.code ?? `Cama ${assignment.bed_id.slice(0, 8)}`}
+                              </p>
+                              <p className="text-xs text-slate-500">
+                                {bed
+                                  ? `${bed.ward} · Hab. ${bed.room}`
+                                  : 'Habitacion no disponible'}
+                              </p>
+                            </div>
+                            <span className="rounded-md bg-slate-100 px-2 py-1 text-xs font-semibold text-slate-500">
+                              {assignment.ended_at ? 'Finalizada' : 'Actual'}
+                            </span>
+                          </div>
+                          <p className="mt-2 text-xs text-slate-400">
+                            {formatDateTime(assignment.started_at)} -{' '}
+                            {formatDateTime(assignment.ended_at) ?? 'Actualidad'}
+                          </p>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
               {canManage && hosp.status === 'PENDING_BED' && (
                 <button
                   onClick={() => setAssignOpen(true)}

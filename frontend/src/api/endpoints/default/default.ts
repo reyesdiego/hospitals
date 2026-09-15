@@ -15,6 +15,8 @@ import type {
   BedRead,
   BedRoomAssignmentCreate,
   BedStatusCreate,
+  BedTransferCreate,
+  BedTransferRead,
   BedUpdate,
   FacilityCreate,
   FacilityRead,
@@ -25,6 +27,7 @@ import type {
   PatientCoverageRead,
   PatientCreate,
   PatientRead,
+  PatientUpdate,
   ProfessionalCreate,
   ProfessionalRead,
   ProfessionalUpdate,
@@ -67,6 +70,31 @@ const createPatientApiV1PatientsPost = (
       {url: `/api/v1/patients`, method: 'POST',
       headers: {'Content-Type': 'application/json', },
       data: patientCreate
+    },
+      options);
+    }
+  /**
+ * @summary Update Patient
+ */
+const updatePatientApiV1PatientsPatientIdPut = (
+    patientId: string,
+    patientUpdate: PatientUpdate,
+ options?: SecondParameter<typeof customInstance<PatientRead>>,) => {
+      return customInstance<PatientRead>(
+      {url: `/api/v1/patients/${patientId}`, method: 'PUT',
+      headers: {'Content-Type': 'application/json', },
+      data: patientUpdate
+    },
+      options);
+    }
+  /**
+ * @summary Delete Patient
+ */
+const deletePatientApiV1PatientsPatientIdDelete = (
+    patientId: string,
+ options?: SecondParameter<typeof customInstance<void>>,) => {
+      return customInstance<void>(
+      {url: `/api/v1/patients/${patientId}`, method: 'DELETE'
     },
       options);
     }
@@ -418,6 +446,31 @@ const createHospitalizationApiV1HospitalizationsPost = (
       options);
     }
   /**
+ * @summary List Hospitalization Bed Assignments
+ */
+const listHospitalizationBedAssignmentsApiV1HospitalizationsHospitalizationIdBedAssignmentsGet = (
+    hospitalizationId: string,
+ options?: SecondParameter<typeof customInstance<BedAssignmentRead[]>>,) => {
+      return customInstance<BedAssignmentRead[]>(
+      {url: `/api/v1/hospitalizations/${hospitalizationId}/bed-assignments`, method: 'GET'
+    },
+      options);
+    }
+  /**
+ * @summary Assign Bed
+ */
+const assignBedApiV1HospitalizationsHospitalizationIdBedAssignmentsPost = (
+    hospitalizationId: string,
+    bedAssignmentCreate: BedAssignmentCreate,
+ options?: SecondParameter<typeof customInstance<BedAssignmentRead>>,) => {
+      return customInstance<BedAssignmentRead>(
+      {url: `/api/v1/hospitalizations/${hospitalizationId}/bed-assignments`, method: 'POST',
+      headers: {'Content-Type': 'application/json', },
+      data: bedAssignmentCreate
+    },
+      options);
+    }
+  /**
  * @summary List Admissions
  */
 const listAdmissionsApiV1AdmissionsGet = (
@@ -456,20 +509,6 @@ const administrativeDischargeApiV1AdmissionsAdmissionIdAdministrativeDischargePo
       options);
     }
   /**
- * @summary Assign Bed
- */
-const assignBedApiV1HospitalizationsHospitalizationIdBedAssignmentsPost = (
-    hospitalizationId: string,
-    bedAssignmentCreate: BedAssignmentCreate,
- options?: SecondParameter<typeof customInstance<BedAssignmentRead>>,) => {
-      return customInstance<BedAssignmentRead>(
-      {url: `/api/v1/hospitalizations/${hospitalizationId}/bed-assignments`, method: 'POST',
-      headers: {'Content-Type': 'application/json', },
-      data: bedAssignmentCreate
-    },
-      options);
-    }
-  /**
  * @summary Release Bed
  */
 const releaseBedApiV1HospitalizationsHospitalizationIdReleaseBedPost = (
@@ -480,9 +519,36 @@ const releaseBedApiV1HospitalizationsHospitalizationIdReleaseBedPost = (
     },
       options);
     }
-  return {listPatientsApiV1PatientsGet,createPatientApiV1PatientsPost,findDuplicatePatientsApiV1PatientsDuplicatesGet,listSpecialtiesApiV1SpecialtiesGet,createSpecialtyApiV1SpecialtiesPost,updateSpecialtyApiV1SpecialtiesSpecialtyIdPut,deleteSpecialtyApiV1SpecialtiesSpecialtyIdDelete,listProfessionalsApiV1ProfessionalsGet,createProfessionalApiV1ProfessionalsPost,updateProfessionalApiV1ProfessionalsProfessionalIdPut,deleteProfessionalApiV1ProfessionalsProfessionalIdDelete,listPatientCoveragesApiV1PatientsPatientIdCoveragesGet,createPatientCoverageApiV1PatientsPatientIdCoveragesPost,listFacilitiesApiV1FacilitiesGet,createFacilityApiV1FacilitiesPost,listServicesApiV1ServicesGet,createServiceApiV1ServicesPost,updateServiceApiV1ServicesServiceIdPut,deleteServiceApiV1ServicesServiceIdDelete,listBedsApiV1BedsGet,createBedApiV1BedsPost,updateBedApiV1BedsBedIdPut,assignBedRoomApiV1BedsBedIdRoomPost,setBedStatusApiV1BedsBedIdStatusPost,listRoomsApiV1RoomsGet,createRoomApiV1RoomsPost,updateRoomApiV1RoomsRoomIdPut,deleteRoomApiV1RoomsRoomIdDelete,listHospitalizationsApiV1HospitalizationsGet,createHospitalizationApiV1HospitalizationsPost,listAdmissionsApiV1AdmissionsGet,createAdmissionApiV1AdmissionsPost,administrativeDischargeApiV1AdmissionsAdmissionIdAdministrativeDischargePost,assignBedApiV1HospitalizationsHospitalizationIdBedAssignmentsPost,releaseBedApiV1HospitalizationsHospitalizationIdReleaseBedPost}};
+  /**
+ * @summary Transfer Bed
+ */
+const transferBedApiV1HospitalizationsHospitalizationIdTransfersPost = (
+    hospitalizationId: string,
+    bedTransferCreate: BedTransferCreate,
+ options?: SecondParameter<typeof customInstance<BedTransferRead>>,) => {
+      return customInstance<BedTransferRead>(
+      {url: `/api/v1/hospitalizations/${hospitalizationId}/transfers`, method: 'POST',
+      headers: {'Content-Type': 'application/json', },
+      data: bedTransferCreate
+    },
+      options);
+    }
+  /**
+ * @summary List Bed Transfers
+ */
+const listBedTransfersApiV1HospitalizationsHospitalizationIdTransfersGet = (
+    hospitalizationId: string,
+ options?: SecondParameter<typeof customInstance<BedTransferRead[]>>,) => {
+      return customInstance<BedTransferRead[]>(
+      {url: `/api/v1/hospitalizations/${hospitalizationId}/transfers`, method: 'GET'
+    },
+      options);
+    }
+  return {listPatientsApiV1PatientsGet,createPatientApiV1PatientsPost,updatePatientApiV1PatientsPatientIdPut,deletePatientApiV1PatientsPatientIdDelete,findDuplicatePatientsApiV1PatientsDuplicatesGet,listSpecialtiesApiV1SpecialtiesGet,createSpecialtyApiV1SpecialtiesPost,updateSpecialtyApiV1SpecialtiesSpecialtyIdPut,deleteSpecialtyApiV1SpecialtiesSpecialtyIdDelete,listProfessionalsApiV1ProfessionalsGet,createProfessionalApiV1ProfessionalsPost,updateProfessionalApiV1ProfessionalsProfessionalIdPut,deleteProfessionalApiV1ProfessionalsProfessionalIdDelete,listPatientCoveragesApiV1PatientsPatientIdCoveragesGet,createPatientCoverageApiV1PatientsPatientIdCoveragesPost,listFacilitiesApiV1FacilitiesGet,createFacilityApiV1FacilitiesPost,listServicesApiV1ServicesGet,createServiceApiV1ServicesPost,updateServiceApiV1ServicesServiceIdPut,deleteServiceApiV1ServicesServiceIdDelete,listBedsApiV1BedsGet,createBedApiV1BedsPost,updateBedApiV1BedsBedIdPut,assignBedRoomApiV1BedsBedIdRoomPost,setBedStatusApiV1BedsBedIdStatusPost,listRoomsApiV1RoomsGet,createRoomApiV1RoomsPost,updateRoomApiV1RoomsRoomIdPut,deleteRoomApiV1RoomsRoomIdDelete,listHospitalizationsApiV1HospitalizationsGet,createHospitalizationApiV1HospitalizationsPost,listHospitalizationBedAssignmentsApiV1HospitalizationsHospitalizationIdBedAssignmentsGet,assignBedApiV1HospitalizationsHospitalizationIdBedAssignmentsPost,listAdmissionsApiV1AdmissionsGet,createAdmissionApiV1AdmissionsPost,administrativeDischargeApiV1AdmissionsAdmissionIdAdministrativeDischargePost,releaseBedApiV1HospitalizationsHospitalizationIdReleaseBedPost,transferBedApiV1HospitalizationsHospitalizationIdTransfersPost,listBedTransfersApiV1HospitalizationsHospitalizationIdTransfersGet}};
 export type ListPatientsApiV1PatientsGetResult = NonNullable<Awaited<ReturnType<ReturnType<typeof getDefault>['listPatientsApiV1PatientsGet']>>>
 export type CreatePatientApiV1PatientsPostResult = NonNullable<Awaited<ReturnType<ReturnType<typeof getDefault>['createPatientApiV1PatientsPost']>>>
+export type UpdatePatientApiV1PatientsPatientIdPutResult = NonNullable<Awaited<ReturnType<ReturnType<typeof getDefault>['updatePatientApiV1PatientsPatientIdPut']>>>
+export type DeletePatientApiV1PatientsPatientIdDeleteResult = NonNullable<Awaited<ReturnType<ReturnType<typeof getDefault>['deletePatientApiV1PatientsPatientIdDelete']>>>
 export type FindDuplicatePatientsApiV1PatientsDuplicatesGetResult = NonNullable<Awaited<ReturnType<ReturnType<typeof getDefault>['findDuplicatePatientsApiV1PatientsDuplicatesGet']>>>
 export type ListSpecialtiesApiV1SpecialtiesGetResult = NonNullable<Awaited<ReturnType<ReturnType<typeof getDefault>['listSpecialtiesApiV1SpecialtiesGet']>>>
 export type CreateSpecialtyApiV1SpecialtiesPostResult = NonNullable<Awaited<ReturnType<ReturnType<typeof getDefault>['createSpecialtyApiV1SpecialtiesPost']>>>
@@ -511,8 +577,11 @@ export type UpdateRoomApiV1RoomsRoomIdPutResult = NonNullable<Awaited<ReturnType
 export type DeleteRoomApiV1RoomsRoomIdDeleteResult = NonNullable<Awaited<ReturnType<ReturnType<typeof getDefault>['deleteRoomApiV1RoomsRoomIdDelete']>>>
 export type ListHospitalizationsApiV1HospitalizationsGetResult = NonNullable<Awaited<ReturnType<ReturnType<typeof getDefault>['listHospitalizationsApiV1HospitalizationsGet']>>>
 export type CreateHospitalizationApiV1HospitalizationsPostResult = NonNullable<Awaited<ReturnType<ReturnType<typeof getDefault>['createHospitalizationApiV1HospitalizationsPost']>>>
+export type ListHospitalizationBedAssignmentsApiV1HospitalizationsHospitalizationIdBedAssignmentsGetResult = NonNullable<Awaited<ReturnType<ReturnType<typeof getDefault>['listHospitalizationBedAssignmentsApiV1HospitalizationsHospitalizationIdBedAssignmentsGet']>>>
+export type AssignBedApiV1HospitalizationsHospitalizationIdBedAssignmentsPostResult = NonNullable<Awaited<ReturnType<ReturnType<typeof getDefault>['assignBedApiV1HospitalizationsHospitalizationIdBedAssignmentsPost']>>>
 export type ListAdmissionsApiV1AdmissionsGetResult = NonNullable<Awaited<ReturnType<ReturnType<typeof getDefault>['listAdmissionsApiV1AdmissionsGet']>>>
 export type CreateAdmissionApiV1AdmissionsPostResult = NonNullable<Awaited<ReturnType<ReturnType<typeof getDefault>['createAdmissionApiV1AdmissionsPost']>>>
 export type AdministrativeDischargeApiV1AdmissionsAdmissionIdAdministrativeDischargePostResult = NonNullable<Awaited<ReturnType<ReturnType<typeof getDefault>['administrativeDischargeApiV1AdmissionsAdmissionIdAdministrativeDischargePost']>>>
-export type AssignBedApiV1HospitalizationsHospitalizationIdBedAssignmentsPostResult = NonNullable<Awaited<ReturnType<ReturnType<typeof getDefault>['assignBedApiV1HospitalizationsHospitalizationIdBedAssignmentsPost']>>>
 export type ReleaseBedApiV1HospitalizationsHospitalizationIdReleaseBedPostResult = NonNullable<Awaited<ReturnType<ReturnType<typeof getDefault>['releaseBedApiV1HospitalizationsHospitalizationIdReleaseBedPost']>>>
+export type TransferBedApiV1HospitalizationsHospitalizationIdTransfersPostResult = NonNullable<Awaited<ReturnType<ReturnType<typeof getDefault>['transferBedApiV1HospitalizationsHospitalizationIdTransfersPost']>>>
+export type ListBedTransfersApiV1HospitalizationsHospitalizationIdTransfersGetResult = NonNullable<Awaited<ReturnType<ReturnType<typeof getDefault>['listBedTransfersApiV1HospitalizationsHospitalizationIdTransfersGet']>>>

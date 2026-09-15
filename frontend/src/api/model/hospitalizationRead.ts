@@ -12,4 +12,5 @@ export interface HospitalizationRead {
   status: HospitalizationStatus;
   admission_reason: string;
   admitted_at: string | null;
+  discharged_at: string | null;
 }

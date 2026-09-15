@@ -13,4 +13,7 @@ export interface BedAssignmentRead {
   status: BedStatus;
   started_at: string;
   ended_at: string | null;
+  assignment_reason?: string | null;
+  assigned_by?: string | null;
+  ended_by?: string | null;
 }

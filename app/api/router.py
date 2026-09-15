@@ -1,17 +1,22 @@
 import uuid
-from datetime import UTC, datetime
 
 from fastapi import APIRouter, Response, status
-from sqlalchemy import and_, or_, select
+from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import selectinload
 
 from app.api.dependencies import DbSession
 from app.core.exceptions import DomainError
-from app.models.admission import Admission, AdmissionConsent, Episode, PatientCoverage
-from app.models.bed import Bed, BedAssignment
+from app.models.admission import (
+    Admission,
+    AdmissionConsent,
+    AdmissionStatus,
+    Episode,
+    PatientCoverage,
+)
+from app.models.bed import Bed, BedAssignment, BedTransfer
 from app.models.facility import Facility
-from app.models.hospitalization import Hospitalization
+from app.models.hospitalization import Hospitalization, HospitalizationStatus
 from app.models.patient import Patient
 from app.models.professional import Professional, ProfessionalSpecialty, Specialty
 from app.models.room import Room
@@ -28,6 +33,8 @@ from app.schemas.domain import (
     BedRead,
     BedRoomAssignmentCreate,
     BedStatusCreate,
+    BedTransferCreate,
+    BedTransferRead,
     BedUpdate,
     EpisodeRead,
     FacilityCreate,
@@ -38,6 +45,7 @@ from app.schemas.domain import (
     PatientCoverageRead,
     PatientCreate,
     PatientRead,
+    PatientUpdate,
     ProfessionalCreate,
     ProfessionalRead,
     ProfessionalSpecialtyCreate,
@@ -63,7 +71,6 @@ async def bed_read(obj: Bed, session: DbSession, room: Room | None = None) -> Be
     room = room or await session.get(Room, obj.room_id)
     if not room:
         raise DomainError("La cama no tiene una habitación válida", 500)
-    status_value = await BedAssignmentService(session).current_status(obj.id)
     return BedRead(
         id=obj.id,
         facility_id=obj.facility_id,
@@ -71,7 +78,7 @@ async def bed_read(obj: Bed, session: DbSession, room: Room | None = None) -> Be
         code=obj.code,
         ward=obj.ward,
         room=room.code,
-        status=status_value,
+        status=obj.status,
         patient=None,
     )
 
@@ -94,6 +101,41 @@ async def create_patient(payload: PatientCreate, session: DbSession):
 @router.get("/patients", response_model=list[PatientRead])
 async def list_patients(session: DbSession):
     return list((await session.scalars(select(Patient))).all())
+
+
+@router.put("/patients/{patient_id}", response_model=PatientRead)
+async def update_patient(patient_id: uuid.UUID, payload: PatientUpdate, session: DbSession):
+    obj = await session.get(Patient, patient_id)
+    if not obj:
+        raise DomainError("Paciente inexistente", 404)
+
+    for field, value in payload.model_dump().items():
+        setattr(obj, field, value)
+
+    try:
+        await session.commit()
+    except IntegrityError as exc:
+        await session.rollback()
+        raise DomainError("Documento duplicado", 409) from exc
+
+    await session.refresh(obj)
+    return obj
+
+
+@router.delete("/patients/{patient_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_patient(patient_id: uuid.UUID, session: DbSession):
+    obj = await session.get(Patient, patient_id)
+    if not obj:
+        raise DomainError("Paciente inexistente", 404)
+
+    try:
+        await session.delete(obj)
+        await session.commit()
+    except IntegrityError as exc:
+        await session.rollback()
+        raise DomainError("No se puede eliminar un paciente con registros clínicos asociados", 409) from exc
+
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
 @router.get("/patients/duplicates", response_model=list[PatientRead])
@@ -136,6 +178,30 @@ async def validate_professional_specialties(
     )
     if existing_ids != set(specialty_ids):
         raise DomainError("Especialidad inexistente", 404)
+
+
+def sync_professional_specialties(
+    professional: Professional,
+    specialties: list[ProfessionalSpecialtyCreate],
+) -> None:
+    existing_by_specialty = {link.specialty_id: link for link in professional.specialty_links}
+    requested_ids = {item.specialty_id for item in specialties}
+
+    professional.specialty_links = [
+        link for link in professional.specialty_links if link.specialty_id in requested_ids
+    ]
+
+    for item in specialties:
+        link = existing_by_specialty.get(item.specialty_id)
+        if link:
+            link.license_number = item.license_number
+        else:
+            professional.specialty_links.append(
+                ProfessionalSpecialty(
+                    specialty_id=item.specialty_id,
+                    license_number=item.license_number,
+                )
+            )
 
 
 @router.get("/specialties", response_model=list[SpecialtyRead])
@@ -247,13 +313,7 @@ async def update_professional(
     await validate_professional_specialties(payload.specialties, session)
     for field, value in payload.model_dump(exclude={"specialties"}).items():
         setattr(obj, field, value)
-    obj.specialty_links = [
-        ProfessionalSpecialty(
-            specialty_id=item.specialty_id,
-            license_number=item.license_number,
-        )
-        for item in payload.specialties
-    ]
+    sync_professional_specialties(obj, payload.specialties)
 
     try:
         await session.commit()
@@ -383,20 +443,17 @@ async def create_bed(payload: BedCreate, session: DbSession):
 
 @router.get("/beds", response_model=list[BedRead])
 async def list_beds(session: DbSession):
-    now = datetime.now(UTC)
+    active_assignments = (
+        select(BedAssignment.bed_id, BedAssignment.hospitalization_id)
+        .where(BedAssignment.ended_at.is_(None))
+        .subquery()
+    )
     rows = (
         await session.execute(
-            select(Bed, BedAssignment, Patient)
+            select(Bed, Patient, Room)
             .join(Room, Room.id == Bed.room_id)
-            .outerjoin(
-                BedAssignment,
-                and_(
-                    BedAssignment.bed_id == Bed.id,
-                    BedAssignment.started_at <= now,
-                    or_(BedAssignment.ended_at.is_(None), BedAssignment.ended_at > now),
-                ),
-            )
-            .outerjoin(Hospitalization, Hospitalization.id == BedAssignment.hospitalization_id)
+            .outerjoin(active_assignments, active_assignments.c.bed_id == Bed.id)
+            .outerjoin(Hospitalization, Hospitalization.id == active_assignments.c.hospitalization_id)
             .outerjoin(Patient, Patient.id == Hospitalization.patient_id)
             .order_by(Room.ward, Room.code, Bed.code)
         )
@@ -409,11 +466,11 @@ async def list_beds(session: DbSession):
             room_id=bed.room_id,
             code=bed.code,
             ward=bed.ward,
-            room=(await session.get(Room, bed.room_id)).code,
-            status=BedAssignmentService.status_from_assignment(assignment),
+            room=room.code,
+            status=bed.status,
             patient=PatientRead.model_validate(patient) if patient else None,
         )
-        for bed, assignment, patient in rows
+        for bed, patient, room in rows
     ]
 
 
@@ -478,6 +535,28 @@ async def list_hospitalizations(session: DbSession):
     return list((await session.scalars(select(Hospitalization))).all())
 
 
+@router.get(
+    "/hospitalizations/{hospitalization_id}/bed-assignments",
+    response_model=list[BedAssignmentRead],
+)
+async def list_hospitalization_bed_assignments(
+    hospitalization_id: uuid.UUID,
+    session: DbSession,
+):
+    hospitalization = await session.get(Hospitalization, hospitalization_id)
+    if not hospitalization:
+        raise DomainError("Internación inexistente", 404)
+    return list(
+        (
+            await session.scalars(
+                select(BedAssignment)
+                .where(BedAssignment.hospitalization_id == hospitalization_id)
+                .order_by(BedAssignment.started_at.desc())
+            )
+        ).all()
+    )
+
+
 async def admission_dashboard_read(
     admission: Admission,
     patient: Patient,
@@ -492,8 +571,18 @@ async def admission_dashboard_read(
             )
         ).all()
     )
+    admission_data = AdmissionRead.model_validate(admission).model_dump()
+    if (
+        admission.status == AdmissionStatus.PENDING_BED
+        and admission.hospitalization_id is not None
+    ):
+        hospitalization = await session.get(Hospitalization, admission.hospitalization_id)
+        if hospitalization and hospitalization.status == HospitalizationStatus.IN_PROGRESS:
+            admission_data["status"] = AdmissionStatus.ADMITTED
+            admission_data["admitted_at"] = admission.admitted_at or hospitalization.admitted_at
+
     return AdmissionDashboardRead(
-        **AdmissionRead.model_validate(admission).model_dump(),
+        **admission_data,
         patient=PatientRead.model_validate(patient),
         episode=EpisodeRead.model_validate(episode) if episode else None,
         coverage=PatientCoverageRead.model_validate(coverage) if coverage else None,
@@ -542,12 +631,55 @@ async def assign_bed(
     payload: BedAssignmentCreate,
     session: DbSession,
 ):
-    return await BedAssignmentService(session).assign(hospitalization_id, payload.bed_id)
+    return await BedAssignmentService(session).assign(
+        hospitalization_id,
+        payload.bed_id,
+        assignment_reason=payload.assignment_reason,
+        assigned_by=payload.assigned_by,
+    )
 
 
 @router.post("/hospitalizations/{hospitalization_id}/release-bed", response_model=BedAssignmentRead)
 async def release_bed(hospitalization_id: uuid.UUID, session: DbSession):
     return await BedAssignmentService(session).release(hospitalization_id)
+
+
+@router.post(
+    "/hospitalizations/{hospitalization_id}/transfers",
+    response_model=BedTransferRead,
+    status_code=201,
+)
+async def transfer_bed(
+    hospitalization_id: uuid.UUID,
+    payload: BedTransferCreate,
+    session: DbSession,
+):
+    return await BedAssignmentService(session).transfer(
+        hospitalization_id,
+        payload.destination_bed_id,
+        reason=payload.reason,
+        requested_by=payload.requested_by,
+        completed_by=payload.completed_by,
+    )
+
+
+@router.get(
+    "/hospitalizations/{hospitalization_id}/transfers",
+    response_model=list[BedTransferRead],
+)
+async def list_bed_transfers(hospitalization_id: uuid.UUID, session: DbSession):
+    hospitalization = await session.get(Hospitalization, hospitalization_id)
+    if not hospitalization:
+        raise DomainError("Internación inexistente", 404)
+    return list(
+        (
+            await session.scalars(
+                select(BedTransfer)
+                .where(BedTransfer.hospitalization_id == hospitalization_id)
+                .order_by(BedTransfer.requested_at.desc())
+            )
+        ).all()
+    )
 
 
 api_router = router

@@ -1,3 +1,4 @@
+import asyncio
 from logging.config import fileConfig
 
 from sqlalchemy import pool
@@ -18,5 +19,5 @@ async def run_async():
     async with engine.connect() as connection: await connection.run_sync(do_run)
     await engine.dispose()
 def run_migrations_online():
-    import asyncio; asyncio.run(run_async())
+    asyncio.run(run_async())
 run_migrations_online()

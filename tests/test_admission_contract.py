@@ -11,7 +11,11 @@ def test_admission_endpoints_are_exposed_in_openapi():
     paths = response.json()["paths"]
     assert "/api/v1/admissions" in paths
     assert "/api/v1/admissions/{admission_id}/administrative-discharge" in paths
+    assert "/api/v1/patients/{patient_id}" in paths
+    assert "put" in paths["/api/v1/patients/{patient_id}"]
+    assert "delete" in paths["/api/v1/patients/{patient_id}"]
     assert "/api/v1/patients/duplicates" in paths
     assert "/api/v1/rooms" in paths
     assert "/api/v1/rooms/{room_id}" in paths
     assert "/api/v1/beds/{bed_id}/room" in paths
+    assert "get" in paths["/api/v1/hospitalizations/{hospitalization_id}/bed-assignments"]

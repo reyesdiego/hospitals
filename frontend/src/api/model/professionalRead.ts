@@ -14,6 +14,6 @@ export interface ProfessionalRead {
   document_number: string;
   email: string | null;
   phone: string | null;
-  specialties: ProfessionalSpecialtyRead[];
+  specialties?: ProfessionalSpecialtyRead[];
   created_at: string;
 }

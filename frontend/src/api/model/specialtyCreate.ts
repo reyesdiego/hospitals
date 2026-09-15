@@ -6,6 +6,14 @@
  */
 
 export interface SpecialtyCreate {
+  /**
+     * @minLength 1
+     * @maxLength 150
+     */
   name: string;
+  /**
+     * @minLength 1
+     * @maxLength 30
+     */
   code: string;
 }

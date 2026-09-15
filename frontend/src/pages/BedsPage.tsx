@@ -6,7 +6,7 @@ import { useAuth } from '@/auth/AuthContext';
 import { BedCard } from '@/components/BedCard';
 import { PageHeader, Card, Spinner, ErrorState, EmptyState } from '@/components/ui';
 import Modal from '@/components/Modal';
-import { BedDouble, DoorOpen, Plus } from 'lucide-react';
+import { BedDouble, CheckCircle2, DoorOpen, Plus } from 'lucide-react';
 
 export default function BedsPage() {
   const { user } = useAuth();
@@ -54,6 +54,15 @@ export default function BedsPage() {
       queryClient.invalidateQueries({ queryKey: ['beds'] });
       setMovingBed(null);
       setTargetRoomId('');
+    },
+  });
+
+  const statusMutation = useMutation({
+    mutationFn: ({ bedId, status }: { bedId: string; status: 'AVAILABLE' }) =>
+      api.setBedStatusApiV1BedsBedIdStatusPost(bedId, { status }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['beds'] });
+      queryClient.invalidateQueries({ queryKey: ['rooms'] });
     },
   });
 
@@ -120,17 +129,32 @@ export default function BedsPage() {
                       <div key={bed.id} className="rounded-lg border border-slate-100 bg-white p-2">
                         <BedCard bed={bed} />
                         {canCreate && (
-                          <button
-                            type="button"
-                            onClick={() => {
-                              setMovingBed(bed);
-                              setTargetRoomId('');
-                            }}
-                            className="mt-2 flex w-full items-center justify-center gap-1.5 rounded-lg border border-slate-200 px-3 py-2 text-xs font-semibold text-slate-600 hover:bg-slate-50"
-                          >
-                            <DoorOpen className="h-3.5 w-3.5" />
-                            Mover habitacion
-                          </button>
+                          <div className="mt-2 grid gap-2">
+                            {bed.status === 'PENDING_CLEANING' && (
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  statusMutation.mutate({ bedId: bed.id, status: 'AVAILABLE' })
+                                }
+                                disabled={statusMutation.isPending}
+                                className="flex w-full items-center justify-center gap-1.5 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs font-semibold text-emerald-700 hover:bg-emerald-100 disabled:opacity-50"
+                              >
+                                <CheckCircle2 className="h-3.5 w-3.5" />
+                                Marcar disponible
+                              </button>
+                            )}
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setMovingBed(bed);
+                                setTargetRoomId('');
+                              }}
+                              className="flex w-full items-center justify-center gap-1.5 rounded-lg border border-slate-200 px-3 py-2 text-xs font-semibold text-slate-600 hover:bg-slate-50"
+                            >
+                              <DoorOpen className="h-3.5 w-3.5" />
+                              Mover habitacion
+                            </button>
+                          </div>
                         )}
                       </div>
                     ))}

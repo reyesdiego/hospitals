@@ -27,6 +27,7 @@ const emptyProfessionalForm: ProfessionalForm = {
   specialties: [],
 };
 const emptySpecialtyForm: SpecialtyForm = { name: '', code: '' };
+const professionalSpecialties = (professional: ProfessionalRead) => professional.specialties ?? [];
 
 export default function ProfessionalsPage() {
   const api = getDefault();
@@ -120,7 +121,7 @@ export default function ProfessionalsPage() {
       document_number: professional.document_number,
       email: professional.email,
       phone: professional.phone,
-      specialties: professional.specialties.map((item) => ({
+      specialties: professionalSpecialties(professional).map((item) => ({
         specialty_id: item.specialty_id,
         license_number: item.license_number,
       })),
@@ -158,7 +159,7 @@ export default function ProfessionalsPage() {
     setProfessionalForm({
       ...professionalForm,
       specialties: [
-        ...professionalForm.specialties,
+        ...(professionalForm.specialties ?? []),
         { specialty_id: firstSpecialty.id, license_number: '' },
       ],
     });
@@ -168,6 +169,7 @@ export default function ProfessionalsPage() {
   const specialtySaving = createSpecialty.isPending || updateSpecialty.isPending;
   const professionals = professionalsQuery.data ?? [];
   const specialties = specialtiesQuery.data ?? [];
+  const professionalFormSpecialties = professionalForm.specialties ?? [];
 
   return (
     <div>
@@ -257,10 +259,10 @@ export default function ProfessionalsPage() {
                       </td>
                       <td className="px-5 py-4">
                         <div className="flex flex-wrap gap-2">
-                          {professional.specialties.length === 0 ? (
+                          {professionalSpecialties(professional).length === 0 ? (
                             <span className="text-sm text-slate-400">Sin especialidades</span>
                           ) : (
-                            professional.specialties.map((item) => (
+                            professionalSpecialties(professional).map((item) => (
                               <span
                                 key={item.id}
                                 className="rounded-md bg-slate-100 px-2 py-1 text-xs font-semibold text-slate-600"
@@ -402,16 +404,16 @@ export default function ProfessionalsPage() {
                 Agregar
               </button>
             </div>
-            {professionalForm.specialties.length === 0 ? (
+            {professionalFormSpecialties.length === 0 ? (
               <p className="text-sm text-slate-400">Sin especialidades asignadas.</p>
             ) : (
               <div className="space-y-3">
-                {professionalForm.specialties.map((item, index) => (
+                {professionalFormSpecialties.map((item, index) => (
                   <div key={index} className="grid grid-cols-[1fr_1fr_auto] gap-3">
                     <select
                       value={item.specialty_id}
                       onChange={(event) => {
-                        const rows = [...professionalForm.specialties];
+                        const rows = [...professionalFormSpecialties];
                         rows[index] = { ...item, specialty_id: event.target.value };
                         setProfessionalForm({ ...professionalForm, specialties: rows });
                       }}
@@ -427,7 +429,7 @@ export default function ProfessionalsPage() {
                       required
                       value={item.license_number}
                       onChange={(event) => {
-                        const rows = [...professionalForm.specialties];
+                        const rows = [...professionalFormSpecialties];
                         rows[index] = { ...item, license_number: event.target.value };
                         setProfessionalForm({ ...professionalForm, specialties: rows });
                       }}
@@ -439,7 +441,7 @@ export default function ProfessionalsPage() {
                       onClick={() =>
                         setProfessionalForm({
                           ...professionalForm,
-                          specialties: professionalForm.specialties.filter((_, i) => i !== index),
+                          specialties: professionalFormSpecialties.filter((_, i) => i !== index),
                         })
                       }
                       className="rounded-lg p-2 text-slate-500 hover:bg-red-50 hover:text-red-600"
