@@ -1,100 +1,39 @@
+"""Physical bed occupancy: confirmation of admission, transfers and release."""
+
 import uuid
 from datetime import UTC, datetime
 
 from sqlalchemy import select
-from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.exceptions import DomainError
+from app.core.exceptions import DomainError, integrity_conflict
 from app.models.admission import Admission, AdmissionStatus
+from app.models.audit import HospitalizationEventType
 from app.models.bed import (
     Bed,
     BedAssignment,
+    BedReservation,
+    BedReservationStatus,
     BedStatus,
     BedTransfer,
     TransferStatus,
 )
-from app.models.hospitalization import Hospitalization, HospitalizationStatus
+from app.models.hospitalization import (
+    OPEN_HOSPITALIZATION_STATUSES,
+    Hospitalization,
+    HospitalizationStatus,
+)
+from app.services.audit import record_event
+from app.services.bed_status import apply_bed_status
+from app.services.service_assignment import reassign_service
 
-ACTIVE_HOSPITALIZATION_STATUSES = {
-    HospitalizationStatus.PENDING_BED,
-    HospitalizationStatus.IN_PROGRESS,
-}
+ACTIVE_HOSPITALIZATION_STATUSES = OPEN_HOSPITALIZATION_STATUSES
 ASSIGNABLE_BED_STATUS = BedStatus.AVAILABLE
 
 
 class BedAssignmentService:
     def __init__(self, session: AsyncSession):
         self.session = session
-
-    @staticmethod
-    def status_from_assignment(assignment: BedAssignment | None) -> BedStatus:
-        if assignment is None:
-            return BedStatus.AVAILABLE
-        if assignment.status is not None:
-            return assignment.status
-        if assignment.hospitalization_id is not None:
-            return BedStatus.OCCUPIED
-        return BedStatus.AVAILABLE
-
-    async def current_status(self, bed_id: uuid.UUID, at: datetime | None = None) -> BedStatus:
-        session_get = getattr(self.session, "get", None)
-        if session_get is not None:
-            bed = await session_get(Bed, bed_id)
-            if bed is not None:
-                return bed.status
-
-        at = at or datetime.now(UTC)
-        assignment = await self.session.scalar(
-            select(BedAssignment)
-            .where(
-                BedAssignment.bed_id == bed_id,
-                BedAssignment.started_at <= at,
-                (BedAssignment.ended_at.is_(None)) | (BedAssignment.ended_at > at),
-            )
-            .order_by(BedAssignment.started_at.desc())
-        )
-        return self.status_from_assignment(assignment)
-
-    async def set_status(
-        self,
-        bed_id: uuid.UUID,
-        status: BedStatus,
-        started_at: datetime | None = None,
-        ended_at: datetime | None = None,
-    ) -> BedAssignment | None:
-        if status == BedStatus.OCCUPIED:
-            raise DomainError("La ocupación se crea desde una internación", 409)
-
-        async with self.session.begin():
-            bed = await self.session.get(Bed, bed_id, with_for_update=True)
-            if not bed:
-                raise DomainError("Cama inexistente", 404)
-
-            now = datetime.now(UTC)
-            effective_start = started_at or now
-            if ended_at is not None and ended_at <= effective_start:
-                raise DomainError("El fin debe ser posterior al inicio", 422)
-
-            active = await self._active_assignment_for_bed(bed_id, lock=True)
-            if active and active.hospitalization_id is not None:
-                raise DomainError("La cama está ocupada por una internación", 409)
-            if active:
-                active.ended_at = now
-
-            bed.status = status
-            if status == BedStatus.AVAILABLE:
-                return active
-
-            assignment = BedAssignment(
-                bed_id=bed_id,
-                status=status,
-                started_at=effective_start,
-                ended_at=ended_at,
-            )
-            self.session.add(assignment)
-            await self.session.flush()
-            return assignment
 
     async def assign(
         self,
@@ -104,25 +43,31 @@ class BedAssignmentService:
         assignment_reason: str | None = None,
         assigned_by: str | None = None,
     ) -> BedAssignment:
-        if commit:
-            try:
-                async with self.session.begin():
-                    return await self._assign_locked(
-                        hospitalization_id,
-                        bed_id,
-                        assignment_reason=assignment_reason,
-                        assigned_by=assigned_by,
-                    )
-            except IntegrityError as exc:
-                await self.session.rollback()
-                raise DomainError("La cama o la internación ya tienen una asignación activa", 409) from exc
+        """Confirm the physical admission of the patient on a bed.
 
-        return await self._assign_locked(
-            hospitalization_id,
-            bed_id,
-            assignment_reason=assignment_reason,
-            assigned_by=assigned_by,
-        )
+        Completes the reservation if the bed was held for this hospitalization, moves the
+        bed to OCCUPIED and starts the hospitalization. Atomic when ``commit`` is true;
+        otherwise it joins the transaction owned by the caller.
+        """
+
+        if not commit:
+            return await self._assign_locked(
+                hospitalization_id,
+                bed_id,
+                assignment_reason=assignment_reason,
+                assigned_by=assigned_by,
+            )
+
+        async with integrity_conflict(
+            self.session,
+            "La cama o la internación ya tienen una asignación activa",
+        ), self.session.begin():
+            return await self._assign_locked(
+                hospitalization_id,
+                bed_id,
+                assignment_reason=assignment_reason,
+                assigned_by=assigned_by,
+            )
 
     async def transfer(
         self,
@@ -131,88 +76,176 @@ class BedAssignmentService:
         reason: str | None = None,
         requested_by: str | None = None,
         completed_by: str | None = None,
+        service_id: uuid.UUID | None = None,
     ) -> BedTransfer:
-        try:
-            async with self.session.begin():
-                hospitalization = await self._hospitalization_for_update(hospitalization_id)
-                self._validate_hospitalization_active(hospitalization)
+        """Move a patient to another bed atomically: the patient never loses the origin
+        bed unless the destination has been secured in the same transaction."""
 
-                current_assignment = await self._active_assignment_for_hospitalization(
-                    hospitalization_id,
-                    lock=True,
-                )
-                if not current_assignment:
-                    raise DomainError("La internación no tiene una cama activa", 404)
-                if current_assignment.bed_id == destination_bed_id:
-                    raise DomainError("La transferencia no puede apuntar a la misma cama", 409)
+        async with (
+            integrity_conflict(self.session, "La cama destino dejó de estar disponible"),
+            self.session.begin(),
+        ):
+            hospitalization = await self._hospitalization_for_update(hospitalization_id)
+            self._validate_hospitalization_active(hospitalization)
 
-                beds = await self._lock_beds(current_assignment.bed_id, destination_bed_id)
-                source_bed = beds.get(current_assignment.bed_id)
-                destination_bed = beds.get(destination_bed_id)
-                if not destination_bed:
-                    raise DomainError("Cama destino inexistente", 404)
-                if not source_bed:
-                    raise DomainError("La cama actual de la internación no existe", 409)
-                if destination_bed.status != ASSIGNABLE_BED_STATUS:
-                    raise DomainError("La cama destino no está disponible", 409)
-
-                now = datetime.now(UTC)
-                transfer = BedTransfer(
-                    hospitalization_id=hospitalization_id,
-                    from_bed_id=source_bed.id,
-                    to_bed_id=destination_bed.id,
-                    status=TransferStatus.COMPLETED,
-                    requested_at=now,
-                    completed_at=now,
-                    reason=reason,
-                    requested_by=requested_by,
-                    completed_by=completed_by,
-                )
-                current_assignment.ended_at = now
-                current_assignment.ended_by = completed_by
-                source_bed.status = BedStatus.PENDING_CLEANING
-
-                new_assignment = BedAssignment(
-                    hospitalization_id=hospitalization_id,
-                    bed_id=destination_bed.id,
-                    status=BedStatus.OCCUPIED,
-                    started_at=now,
-                    assignment_reason=reason,
-                    assigned_by=completed_by,
-                )
-                destination_bed.status = BedStatus.OCCUPIED
-                self.session.add_all([transfer, new_assignment])
-                await self.session.flush()
-                return transfer
-        except IntegrityError as exc:
-            await self.session.rollback()
-            raise DomainError("La cama destino dejó de estar disponible", 409) from exc
-
-    async def release(self, hospitalization_id: uuid.UUID) -> BedAssignment:
-        async with self.session.begin():
-            assignment = await self._active_assignment_for_hospitalization(
+            current_assignment = await self._active_assignment_for_hospitalization(
                 hospitalization_id,
                 lock=True,
             )
-            if not assignment:
+            if not current_assignment:
                 raise DomainError("La internación no tiene una cama activa", 404)
-            hospitalization = await self.session.get(
-                Hospitalization,
-                hospitalization_id,
-                with_for_update=True,
-            )
-            bed = await self.session.get(Bed, assignment.bed_id, with_for_update=True)
-            if not bed:
-                raise DomainError("Cama inexistente", 404)
+            if current_assignment.bed_id == destination_bed_id:
+                raise DomainError("La transferencia no puede apuntar a la misma cama", 409)
+
+            beds = await self._lock_beds(current_assignment.bed_id, destination_bed_id)
+            source_bed = beds.get(current_assignment.bed_id)
+            destination_bed = beds.get(destination_bed_id)
+            if not destination_bed:
+                raise DomainError("Cama destino inexistente", 404)
+            if not source_bed:
+                raise DomainError("La cama actual de la internación no existe", 409)
 
             now = datetime.now(UTC)
-            assignment.ended_at = now
-            bed.status = BedStatus.PENDING_CLEANING
-            if hospitalization:
-                hospitalization.status = HospitalizationStatus.CLINICALLY_DISCHARGED
-                hospitalization.discharged_at = hospitalization.discharged_at or now
+            reservation = await self._reservation_to_complete(
+                destination_bed,
+                hospitalization_id,
+            )
+            if destination_bed.status != ASSIGNABLE_BED_STATUS and reservation is None:
+                raise DomainError("La cama destino no está disponible", 409)
+            if await self._active_assignment_for_bed(destination_bed_id, lock=True):
+                raise DomainError("La cama destino no está disponible", 409)
+            if reservation is not None:
+                self._complete_reservation(reservation, now)
+
+            transfer = BedTransfer(
+                hospitalization_id=hospitalization_id,
+                from_bed_id=source_bed.id,
+                to_bed_id=destination_bed.id,
+                status=TransferStatus.COMPLETED,
+                requested_at=now,
+                completed_at=now,
+                reason=reason,
+                requested_by=requested_by,
+                completed_by=completed_by,
+            )
+            current_assignment.ended_at = now
+            current_assignment.ended_by = completed_by
+            apply_bed_status(
+                self.session,
+                source_bed,
+                BedStatus.PENDING_CLEANING,
+                changed_by=completed_by,
+                reason=reason,
+                at=now,
+                hospitalization_id=hospitalization_id,
+                record_audit_event=False,
+            )
+
+            new_assignment = BedAssignment(
+                hospitalization_id=hospitalization_id,
+                bed_id=destination_bed.id,
+                started_at=now,
+                assignment_reason=reason,
+                assigned_by=completed_by,
+            )
+            apply_bed_status(
+                self.session,
+                destination_bed,
+                BedStatus.OCCUPIED,
+                changed_by=completed_by,
+                reason=reason,
+                at=now,
+                hospitalization_id=hospitalization_id,
+                record_audit_event=False,
+            )
+            self.session.add_all([transfer, new_assignment])
+            record_event(
+                self.session,
+                HospitalizationEventType.PATIENT_TRANSFERRED,
+                hospitalization_id=hospitalization_id,
+                bed_id=destination_bed.id,
+                patient_id=hospitalization.patient_id,
+                actor=completed_by,
+                occurred_at=now,
+                details={
+                    "from_bed_id": str(source_bed.id),
+                    "to_bed_id": str(destination_bed.id),
+                    "reason": reason,
+                },
+            )
+            if service_id is not None:
+                await reassign_service(
+                    self.session,
+                    hospitalization,
+                    service_id,
+                    at=now,
+                    reason=reason,
+                    assigned_by=completed_by,
+                )
             await self.session.flush()
-            return assignment
+            return transfer
+
+    async def end_active_assignment(
+        self,
+        hospitalization: Hospitalization,
+        *,
+        at: datetime,
+        released_by: str | None = None,
+        reason: str | None = None,
+    ) -> BedAssignment:
+        """End the current occupancy and send the bed to cleaning.
+
+        Non-transactional: used by the physical-departure use case, which owns the
+        transaction and the hospitalization lifecycle changes.
+        """
+
+        assignment = await self._active_assignment_for_hospitalization(
+            hospitalization.id,
+            lock=True,
+        )
+        if not assignment:
+            raise DomainError("La internación no tiene una cama activa", 404)
+        bed = await self.session.get(Bed, assignment.bed_id, with_for_update=True)
+        if not bed:
+            raise DomainError("Cama inexistente", 404)
+
+        assignment.ended_at = at
+        assignment.ended_by = released_by
+        apply_bed_status(
+            self.session,
+            bed,
+            BedStatus.PENDING_CLEANING,
+            changed_by=released_by,
+            reason=reason,
+            at=at,
+            hospitalization_id=hospitalization.id,
+            record_audit_event=False,
+        )
+        record_event(
+            self.session,
+            HospitalizationEventType.BED_RELEASED,
+            hospitalization_id=hospitalization.id,
+            bed_id=bed.id,
+            patient_id=hospitalization.patient_id,
+            actor=released_by,
+            occurred_at=at,
+            details={"reason": reason},
+        )
+        return assignment
+
+    async def list_for_hospitalization(
+        self,
+        hospitalization_id: uuid.UUID,
+    ) -> list[BedAssignment]:
+        return list(
+            (
+                await self.session.scalars(
+                    select(BedAssignment)
+                    .where(BedAssignment.hospitalization_id == hospitalization_id)
+                    .order_by(BedAssignment.started_at.desc())
+                )
+            ).all()
+        )
 
     async def _assign_locked(
         self,
@@ -227,7 +260,10 @@ class BedAssignmentService:
         bed = await self.session.get(Bed, bed_id, with_for_update=True)
         if not bed:
             raise DomainError("Cama inexistente", 404)
-        if bed.status != ASSIGNABLE_BED_STATUS:
+
+        now = datetime.now(UTC)
+        reservation = await self._reservation_to_complete(bed, hospitalization_id)
+        if bed.status != ASSIGNABLE_BED_STATUS and reservation is None:
             raise DomainError("La cama no está disponible", 409)
 
         existing = await self._active_assignment_for_hospitalization(
@@ -237,26 +273,78 @@ class BedAssignmentService:
         if existing:
             raise DomainError("La internación ya tiene una cama activa", 409)
 
-        active_bed_assignment = await self._active_assignment_for_bed(bed_id, lock=True)
-        if active_bed_assignment:
+        if await self._active_assignment_for_bed(bed_id, lock=True):
             raise DomainError("La cama no está disponible", 409)
 
-        now = datetime.now(UTC)
+        if reservation is not None:
+            self._complete_reservation(reservation, now)
+
         assignment = BedAssignment(
             hospitalization_id=hospitalization_id,
             bed_id=bed_id,
-            status=BedStatus.OCCUPIED,
             started_at=now,
             assignment_reason=assignment_reason,
             assigned_by=assigned_by,
         )
-        bed.status = BedStatus.OCCUPIED
+        apply_bed_status(
+            self.session,
+            bed,
+            BedStatus.OCCUPIED,
+            changed_by=assigned_by,
+            reason=assignment_reason,
+            at=now,
+            hospitalization_id=hospitalization_id,
+            record_audit_event=False,
+        )
         hospitalization.status = HospitalizationStatus.IN_PROGRESS
         hospitalization.admitted_at = hospitalization.admitted_at or now
+        if hospitalization.facility_id is None:
+            hospitalization.facility_id = bed.facility_id
         await self._mark_admission_admitted(hospitalization_id, hospitalization.admitted_at)
         self.session.add(assignment)
+        record_event(
+            self.session,
+            HospitalizationEventType.BED_ASSIGNED,
+            hospitalization_id=hospitalization_id,
+            bed_id=bed_id,
+            patient_id=hospitalization.patient_id,
+            actor=assigned_by,
+            occurred_at=now,
+            details={
+                "reason": assignment_reason,
+                "from_reservation": reservation is not None,
+            },
+        )
         await self.session.flush()
         return assignment
+
+    async def _reservation_to_complete(
+        self,
+        bed: Bed,
+        hospitalization_id: uuid.UUID,
+    ) -> BedReservation | None:
+        """Active reservation of this bed held for this hospitalization, if any."""
+
+        if bed.status != BedStatus.RESERVED:
+            return None
+        reservation = await self.session.scalar(
+            select(BedReservation)
+            .where(
+                BedReservation.bed_id == bed.id,
+                BedReservation.status == BedReservationStatus.ACTIVE,
+            )
+            .with_for_update()
+        )
+        if reservation is None:
+            return None
+        if reservation.hospitalization_id != hospitalization_id:
+            raise DomainError("La cama está reservada para otra internación", 409)
+        return reservation
+
+    @staticmethod
+    def _complete_reservation(reservation: BedReservation, at: datetime) -> None:
+        reservation.status = BedReservationStatus.COMPLETED
+        reservation.completed_at = at
 
     async def _mark_admission_admitted(
         self,
@@ -317,14 +405,15 @@ class BedAssignmentService:
             stmt = stmt.with_for_update()
         return await self.session.scalar(stmt)
 
-    async def _lock_beds(self, first_bed_id: uuid.UUID, second_bed_id: uuid.UUID) -> dict[uuid.UUID, Bed]:
+    async def _lock_beds(
+        self,
+        first_bed_id: uuid.UUID,
+        second_bed_id: uuid.UUID,
+    ) -> dict[uuid.UUID, Bed]:
         bed_ids = sorted({first_bed_id, second_bed_id})
         rows = (
             await self.session.scalars(
-                select(Bed)
-                .where(Bed.id.in_(bed_ids))
-                .order_by(Bed.id)
-                .with_for_update()
+                select(Bed).where(Bed.id.in_(bed_ids)).order_by(Bed.id).with_for_update()
             )
         ).all()
         return {bed.id: bed for bed in rows}

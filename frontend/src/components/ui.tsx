@@ -75,9 +75,85 @@ export function EmptyState({ message }: { message: string }) {
 
 export function Badge({ status, color }: { status: string; color: string }) {
   return (
-    <span className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-semibold ${color}`}>
+    <span
+      className={`inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-full px-2.5 py-1 text-xs font-semibold ${color}`}
+    >
       <span className="h-1.5 w-1.5 rounded-full bg-current" />
       {status}
     </span>
+  );
+}
+
+const BUTTON_TONES = {
+  primary:
+    'bg-gradient-to-r from-teal-500 to-cyan-600 text-white shadow-md hover:shadow-lg disabled:opacity-50',
+  neutral: 'border border-slate-200 text-slate-600 hover:bg-slate-50 disabled:opacity-50',
+  teal: 'bg-teal-50 text-teal-700 hover:bg-teal-100 disabled:opacity-50',
+  warning: 'bg-amber-50 text-amber-700 hover:bg-amber-100 disabled:opacity-50',
+  success: 'bg-emerald-50 text-emerald-700 hover:bg-emerald-100 disabled:opacity-50',
+  danger: 'bg-red-50 text-red-600 hover:bg-red-100 disabled:opacity-50',
+} as const;
+
+export type ButtonTone = keyof typeof BUTTON_TONES;
+
+export function ActionButton({
+  children,
+  onClick,
+  tone = 'neutral',
+  type = 'button',
+  disabled = false,
+  className = '',
+}: {
+  children: ReactNode;
+  onClick?: () => void;
+  tone?: ButtonTone;
+  type?: 'button' | 'submit';
+  disabled?: boolean;
+  className?: string;
+}) {
+  return (
+    <button
+      type={type}
+      onClick={onClick}
+      disabled={disabled}
+      className={`flex items-center justify-center gap-1.5 rounded-lg px-3 py-2 text-sm font-semibold transition-colors ${BUTTON_TONES[tone]} ${className}`}
+    >
+      {children}
+    </button>
+  );
+}
+
+export function Field({ label, children }: { label: string; children: ReactNode }) {
+  return (
+    <div>
+      <label className="mb-1.5 block text-sm font-medium text-slate-600">{label}</label>
+      {children}
+    </div>
+  );
+}
+
+export const inputClass =
+  'w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-teal-500 focus:ring-2 focus:ring-teal-500/20';
+
+export function FormError({ message }: { message: string | null }) {
+  if (!message) return null;
+  return <p className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-600">{message}</p>;
+}
+
+export function InfoRow({ label, value }: { label: string; value: ReactNode }) {
+  return (
+    <div className="flex items-center justify-between gap-3 rounded-lg bg-slate-50 px-4 py-3">
+      <span className="text-sm font-medium text-slate-500">{label}</span>
+      <span className="text-right text-sm font-semibold text-slate-700">{value}</span>
+    </div>
+  );
+}
+
+export function SectionTitle({ icon, children }: { icon: ReactNode; children: ReactNode }) {
+  return (
+    <h3 className="mb-4 flex items-center gap-2 text-lg font-bold text-slate-800">
+      {icon}
+      {children}
+    </h3>
   );
 }

@@ -11,7 +11,9 @@ export type HospitalizationStatus = typeof HospitalizationStatus[keyof typeof Ho
 export const HospitalizationStatus = {
   PENDING_BED: 'PENDING_BED',
   IN_PROGRESS: 'IN_PROGRESS',
+  DISCHARGE_PLANNED: 'DISCHARGE_PLANNED',
   CLINICALLY_DISCHARGED: 'CLINICALLY_DISCHARGED',
+  ADMINISTRATIVELY_DISCHARGED: 'ADMINISTRATIVELY_DISCHARGED',
   CLOSED: 'CLOSED',
   CANCELLED: 'CANCELLED',
 } as const;

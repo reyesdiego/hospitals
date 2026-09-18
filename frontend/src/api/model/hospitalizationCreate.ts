@@ -5,11 +5,12 @@
  * OpenAPI spec version: 0.1.0
  */
 
+/**
+ * A hospitalization always originates in an admission request.
+ */
 export interface HospitalizationCreate {
-  patient_id: string;
-  /**
-     * @minLength 3
-     * @maxLength 500
-     */
-  admission_reason: string;
+  admission_id: string;
+  facility_id?: string | null;
+  responsible_service_id?: string | null;
+  attending_physician_id?: string | null;
 }

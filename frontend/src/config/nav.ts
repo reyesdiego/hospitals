@@ -17,6 +17,7 @@ import {
   HeartPulse,
   Stethoscope,
   ClipboardCheck,
+  ClipboardList,
   type LucideIcon,
 } from 'lucide-react';
 
@@ -81,6 +82,12 @@ export const NAV_ITEMS: NavConfig[] = [
     path: '/services',
     icon: Stethoscope,
     roles: ['admin'],
+  },
+  {
+    label: 'Practicas medicas',
+    path: '/practices',
+    icon: ClipboardList,
+    roles: ['admin', 'receptionist'],
   },
 ];
 

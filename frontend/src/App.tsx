@@ -1,4 +1,4 @@
-import { useEffect, type ReactNode } from 'react';
+import { type ReactNode } from 'react';
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { AuthProvider, useAuth } from '@/auth/AuthContext';
@@ -11,10 +11,17 @@ import BedsPage from '@/pages/BedsPage';
 import RoomsPage from '@/pages/RoomsPage';
 import FacilitiesPage from '@/pages/FacilitiesPage';
 import ServicesPage from '@/pages/ServicesPage';
+import MedicalPracticesPage from '@/pages/MedicalPracticesPage';
 import HospitalizationsPage from '@/pages/HospitalizationsPage';
 import HospitalizationDetailPage from '@/pages/HospitalizationDetailPage';
 import AdmissionPanelPage from '@/pages/AdmissionPanelPage';
 import { initMockAdapter } from '@/api/mock-adapter';
+
+// The adapter has to replace axios before the first query runs, so it is installed at
+// module load instead of inside an effect.
+if (import.meta.env.VITE_USE_MOCK_API === 'true') {
+  initMockAdapter();
+}
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -56,6 +63,7 @@ function AppRoutes() {
         <Route path="/rooms" element={<RoomsPage />} />
         <Route path="/facilities" element={<FacilitiesPage />} />
         <Route path="/services" element={<ServicesPage />} />
+        <Route path="/practices" element={<MedicalPracticesPage />} />
         <Route path="/hospitalizations" element={<HospitalizationsPage />} />
         <Route path="/hospitalizations/:id" element={<HospitalizationDetailPage />} />
       </Route>
@@ -65,12 +73,6 @@ function AppRoutes() {
 }
 
 export default function App() {
-  useEffect(() => {
-    if (import.meta.env.VITE_USE_MOCK_API === 'true') {
-      initMockAdapter();
-    }
-  }, []);
-
   return (
     <QueryClientProvider client={queryClient}>
       <AuthProvider>

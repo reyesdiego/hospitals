@@ -7,6 +7,7 @@
 
 export interface BedTransferCreate {
   destination_bed_id: string;
+  service_id?: string | null;
   reason?: string | null;
   requested_by?: string | null;
   completed_by?: string | null;

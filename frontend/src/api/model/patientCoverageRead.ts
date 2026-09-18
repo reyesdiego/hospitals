@@ -4,13 +4,19 @@
  * Hospital Internment API
  * OpenAPI spec version: 0.1.0
  */
+import type { CoverageStatus } from './coverageStatus';
 
 export interface PatientCoverageRead {
   id: string;
   patient_id: string;
+  payer_id: string | null;
+  health_plan_id: string | null;
   payer_name: string;
   plan_name: string | null;
   member_number: string | null;
   authorization_required: boolean;
+  valid_from: string | null;
+  valid_until: string | null;
+  status: CoverageStatus;
   created_at: string;
 }

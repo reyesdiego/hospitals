@@ -7,4 +7,5 @@
 
 export interface AdministrativeDischargeCreate {
   notes?: string | null;
+  actor?: string | null;
 }

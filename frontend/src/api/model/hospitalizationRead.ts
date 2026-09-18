@@ -4,13 +4,20 @@
  * Hospital Internment API
  * OpenAPI spec version: 0.1.0
  */
+import type { AdmissionType } from './admissionType';
 import type { HospitalizationStatus } from './hospitalizationStatus';
 
 export interface HospitalizationRead {
   id: string;
   patient_id: string;
+  episode_id: string | null;
+  facility_id: string | null;
+  admission_type: AdmissionType | null;
   status: HospitalizationStatus;
   admission_reason: string;
   admitted_at: string | null;
-  discharged_at: string | null;
+  clinically_discharged_at: string | null;
+  physically_departed_at: string | null;
+  administratively_discharged_at: string | null;
+  closed_at: string | null;
 }

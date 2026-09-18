@@ -1,28 +1,65 @@
 import { useState } from 'react';
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { getBedWorkflow } from '@/api/endpoints/bed-workflow/bed-workflow';
 import { getDefault } from '@/api/endpoints/default/default';
-import type { BedCreate, BedRead } from '@/api/model';
+import type { BedCreate, BedRead, BedStatus } from '@/api/model';
+import { invalidateBeds } from '@/api/queryKeys';
 import { useAuth } from '@/auth/AuthContext';
 import { BedCard } from '@/components/BedCard';
-import { PageHeader, Card, Spinner, ErrorState, EmptyState } from '@/components/ui';
 import Modal from '@/components/Modal';
-import { BedDouble, CheckCircle2, DoorOpen, Plus } from 'lucide-react';
+import { BED_STATUS_LABELS } from '@/components/StatusBadges';
+import {
+  ActionButton,
+  Card,
+  EmptyState,
+  ErrorState,
+  Field,
+  FormError,
+  PageHeader,
+  SectionTitle,
+  Spinner,
+  inputClass,
+} from '@/components/ui';
+import { apiErrorMessage } from '@/utils/api-error';
+import { formatDateTime } from '@/utils/format';
+import {
+  BedDouble,
+  Brush,
+  CheckCircle2,
+  DoorOpen,
+  History,
+  Plus,
+  SlidersHorizontal,
+} from 'lucide-react';
+
+/** Statuses an operator can set by hand: occupancy and reservation belong to the stay. */
+const OPERATIONAL_STATUSES: BedStatus[] = [
+  'AVAILABLE',
+  'BLOCKED',
+  'MAINTENANCE',
+  'OUT_OF_SERVICE',
+];
 
 export default function BedsPage() {
   const { user } = useAuth();
   const api = getDefault();
+  const bedApi = getBedWorkflow();
   const queryClient = useQueryClient();
   const [modalOpen, setModalOpen] = useState(false);
   const [movingBed, setMovingBed] = useState<BedRead | null>(null);
   const [targetRoomId, setTargetRoomId] = useState('');
+  const [statusBed, setStatusBed] = useState<BedRead | null>(null);
+  const [nextStatus, setNextStatus] = useState<BedStatus>('BLOCKED');
+  const [statusReason, setStatusReason] = useState('');
+  const [historyBed, setHistoryBed] = useState<BedRead | null>(null);
+  const [error, setError] = useState<string | null>(null);
 
-  const canCreate = user && ['admin', 'nurse'].includes(user.role);
+  const canCreate = Boolean(user && ['admin', 'nurse'].includes(user.role));
 
   const bedsQuery = useQuery({
     queryKey: ['beds'],
     queryFn: () => api.listBedsApiV1BedsGet(),
   });
-
   const facilitiesQuery = useQuery({
     queryKey: ['facilities'],
     queryFn: () => api.listFacilitiesApiV1FacilitiesGet(),
@@ -31,55 +68,87 @@ export default function BedsPage() {
     queryKey: ['rooms'],
     queryFn: () => api.listRoomsApiV1RoomsGet(),
   });
-
-  const [form, setForm] = useState<BedCreate>({
-    facility_id: '',
-    room_id: '',
-    code: '',
+  const historyQuery = useQuery({
+    queryKey: ['bed-status-history', historyBed?.id],
+    queryFn: () => bedApi.bedStatusHistoryApiV1BedsBedIdStatusHistoryGet(historyBed?.id ?? ''),
+    enabled: Boolean(historyBed),
   });
+
+  const [form, setForm] = useState<BedCreate>({ facility_id: '', room_id: '', code: '' });
+
+  const onDone = () => {
+    invalidateBeds(queryClient);
+    setError(null);
+  };
 
   const createMutation = useMutation({
     mutationFn: (data: BedCreate) => api.createBedApiV1BedsPost(data),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['beds'] });
+      onDone();
       setModalOpen(false);
       setForm({ facility_id: '', room_id: '', code: '' });
     },
+    onError: (err) => setError(apiErrorMessage(err, 'Error al crear la cama.')),
   });
 
   const moveMutation = useMutation({
     mutationFn: ({ bedId, roomId }: { bedId: string; roomId: string }) =>
       api.assignBedRoomApiV1BedsBedIdRoomPost(bedId, { room_id: roomId }),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['beds'] });
+      onDone();
       setMovingBed(null);
       setTargetRoomId('');
     },
+    onError: (err) => setError(apiErrorMessage(err, 'Error al mover la cama.')),
+  });
+
+  const startCleaningMutation = useMutation({
+    mutationFn: (bedId: string) =>
+      bedApi.startBedCleaningApiV1BedsBedIdCleaningStartPost(bedId, {
+        changed_by: user?.name ?? null,
+      }),
+    onSuccess: onDone,
+    onError: (err) => setError(apiErrorMessage(err, 'No se pudo iniciar la limpieza.')),
+  });
+
+  const completeCleaningMutation = useMutation({
+    mutationFn: (bedId: string) =>
+      bedApi.completeBedCleaningApiV1BedsBedIdCleaningCompletePost(bedId, {
+        changed_by: user?.name ?? null,
+      }),
+    onSuccess: onDone,
+    onError: (err) => setError(apiErrorMessage(err, 'No se pudo finalizar la limpieza.')),
   });
 
   const statusMutation = useMutation({
-    mutationFn: ({ bedId, status }: { bedId: string; status: 'AVAILABLE' }) =>
-      api.setBedStatusApiV1BedsBedIdStatusPost(bedId, { status }),
+    mutationFn: ({ bedId, status }: { bedId: string; status: BedStatus }) =>
+      api.setBedStatusApiV1BedsBedIdStatusPost(bedId, {
+        status,
+        changed_by: user?.name ?? null,
+        reason: statusReason || null,
+      }),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['beds'] });
-      queryClient.invalidateQueries({ queryKey: ['rooms'] });
+      onDone();
+      setStatusBed(null);
+      setStatusReason('');
     },
+    onError: (err) => setError(apiErrorMessage(err, 'No se pudo cambiar el estado de la cama.')),
   });
-
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    createMutation.mutate(form);
-  };
 
   const beds = bedsQuery.data ?? [];
   const rooms = roomsQuery.data ?? [];
   const roomsForFacility = rooms.filter((room) => room.facility_id === form.facility_id);
   const moveRooms = movingBed
-    ? rooms.filter((room) => room.facility_id === movingBed.facility_id && room.id !== movingBed.room_id)
+    ? rooms.filter(
+        (room) => room.facility_id === movingBed.facility_id && room.id !== movingBed.room_id,
+      )
     : [];
+  const busy =
+    startCleaningMutation.isPending ||
+    completeCleaningMutation.isPending ||
+    statusMutation.isPending;
 
-  // Group by ward
-  const wards = beds.reduce<Record<string, typeof beds>>((acc, bed) => {
+  const wards = beds.reduce<Record<string, BedRead[]>>((acc, bed) => {
     (acc[bed.ward] ??= []).push(bed);
     return acc;
   }, {});
@@ -88,16 +157,13 @@ export default function BedsPage() {
     <div>
       <PageHeader
         title="Camas"
-        subtitle="Inventario y estado de camas por servicio"
+        subtitle="Inventario, ocupacion, reservas y limpieza"
         action={
           canCreate ? (
-            <button
-              onClick={() => setModalOpen(true)}
-              className="flex items-center gap-2 rounded-lg bg-gradient-to-r from-teal-500 to-cyan-600 px-4 py-2.5 text-sm font-semibold text-white shadow-md transition-all hover:shadow-lg"
-            >
+            <ActionButton tone="primary" onClick={() => setModalOpen(true)} className="px-4 py-2.5">
               <Plus className="h-4 w-4" />
               Nueva cama
-            </button>
+            </ActionButton>
           ) : undefined
         }
       />
@@ -105,6 +171,12 @@ export default function BedsPage() {
       {(bedsQuery.isLoading || roomsQuery.isLoading) && <Spinner />}
       {(bedsQuery.isError || roomsQuery.isError) && (
         <ErrorState message="No se pudo cargar la lista de camas." />
+      )}
+
+      {error && (
+        <div className="mb-4">
+          <FormError message={error} />
+        </div>
       )}
 
       {bedsQuery.data && (
@@ -117,13 +189,12 @@ export default function BedsPage() {
             <div className="space-y-6">
               {Object.entries(wards).map(([ward, wardBeds]) => (
                 <Card key={ward} className="p-6">
-                  <h3 className="mb-4 flex items-center gap-2 text-lg font-bold text-slate-800">
-                    <BedDouble className="h-5 w-5 text-teal-600" />
+                  <SectionTitle icon={<BedDouble className="h-5 w-5 text-teal-600" />}>
                     {ward}
                     <span className="text-sm font-normal text-slate-400">
                       ({wardBeds.length})
                     </span>
-                  </h3>
+                  </SectionTitle>
                   <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
                     {wardBeds.map((bed) => (
                       <div key={bed.id} className="rounded-lg border border-slate-100 bg-white p-2">
@@ -131,29 +202,62 @@ export default function BedsPage() {
                         {canCreate && (
                           <div className="mt-2 grid gap-2">
                             {bed.status === 'PENDING_CLEANING' && (
-                              <button
-                                type="button"
-                                onClick={() =>
-                                  statusMutation.mutate({ bedId: bed.id, status: 'AVAILABLE' })
-                                }
-                                disabled={statusMutation.isPending}
-                                className="flex w-full items-center justify-center gap-1.5 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs font-semibold text-emerald-700 hover:bg-emerald-100 disabled:opacity-50"
+                              <ActionButton
+                                tone="warning"
+                                disabled={busy}
+                                onClick={() => startCleaningMutation.mutate(bed.id)}
+                                className="w-full text-xs"
+                              >
+                                <Brush className="h-3.5 w-3.5" />
+                                Iniciar limpieza
+                              </ActionButton>
+                            )}
+                            {(bed.status === 'CLEANING' || bed.status === 'PENDING_CLEANING') && (
+                              <ActionButton
+                                tone="success"
+                                disabled={busy}
+                                onClick={() => completeCleaningMutation.mutate(bed.id)}
+                                className="w-full text-xs"
                               >
                                 <CheckCircle2 className="h-3.5 w-3.5" />
-                                Marcar disponible
-                              </button>
+                                Finalizar limpieza
+                              </ActionButton>
                             )}
-                            <button
-                              type="button"
+                            <div className="grid grid-cols-2 gap-2">
+                              <ActionButton
+                                tone="neutral"
+                                onClick={() => {
+                                  setError(null);
+                                  setStatusBed(bed);
+                                  setNextStatus(
+                                    bed.status === 'AVAILABLE' ? 'BLOCKED' : 'AVAILABLE',
+                                  );
+                                }}
+                                className="text-xs"
+                              >
+                                <SlidersHorizontal className="h-3.5 w-3.5" />
+                                Estado
+                              </ActionButton>
+                              <ActionButton
+                                tone="neutral"
+                                onClick={() => setHistoryBed(bed)}
+                                className="text-xs"
+                              >
+                                <History className="h-3.5 w-3.5" />
+                                Historial
+                              </ActionButton>
+                            </div>
+                            <ActionButton
+                              tone="neutral"
                               onClick={() => {
                                 setMovingBed(bed);
                                 setTargetRoomId('');
                               }}
-                              className="flex w-full items-center justify-center gap-1.5 rounded-lg border border-slate-200 px-3 py-2 text-xs font-semibold text-slate-600 hover:bg-slate-50"
+                              className="w-full text-xs"
                             >
                               <DoorOpen className="h-3.5 w-3.5" />
                               Mover habitacion
-                            </button>
+                            </ActionButton>
                           </div>
                         )}
                       </div>
@@ -167,16 +271,19 @@ export default function BedsPage() {
       )}
 
       <Modal open={modalOpen} onClose={() => setModalOpen(false)} title="Nueva cama">
-        <form onSubmit={handleSubmit} className="space-y-4">
-          <div>
-            <label className="mb-1.5 block text-sm font-medium text-slate-600">
-              Centro sanitario
-            </label>
+        <form
+          onSubmit={(event) => {
+            event.preventDefault();
+            createMutation.mutate(form);
+          }}
+          className="space-y-4"
+        >
+          <Field label="Centro sanitario">
             <select
               required
               value={form.facility_id}
               onChange={(e) => setForm({ ...form, facility_id: e.target.value, room_id: '' })}
-              className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-teal-500 focus:ring-2 focus:ring-teal-500/20"
+              className={inputClass}
               disabled={facilitiesQuery.isLoading || facilitiesQuery.isError}
             >
               <option value="">
@@ -197,26 +304,24 @@ export default function BedsPage() {
                 Primero crea un centro sanitario para poder dar de alta camas.
               </p>
             )}
-          </div>
+          </Field>
           <div className="grid grid-cols-2 gap-4">
-            <div>
-              <label className="mb-1.5 block text-sm font-medium text-slate-600">Codigo</label>
+            <Field label="Codigo">
               <input
                 type="text"
                 required
                 placeholder="A-101"
                 value={form.code}
                 onChange={(e) => setForm({ ...form, code: e.target.value })}
-                className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-teal-500 focus:ring-2 focus:ring-teal-500/20"
+                className={inputClass}
               />
-            </div>
-            <div>
-              <label className="mb-1.5 block text-sm font-medium text-slate-600">Habitacion</label>
+            </Field>
+            <Field label="Habitacion">
               <select
                 required
                 value={form.room_id}
                 onChange={(e) => setForm({ ...form, room_id: e.target.value })}
-                className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-teal-500 focus:ring-2 focus:ring-teal-500/20"
+                className={inputClass}
                 disabled={!form.facility_id}
               >
                 <option value="">
@@ -228,39 +333,27 @@ export default function BedsPage() {
                   </option>
                 ))}
               </select>
-            </div>
+            </Field>
           </div>
           {form.facility_id && roomsForFacility.length === 0 && (
             <p className="rounded-lg bg-amber-50 px-3 py-2 text-sm text-amber-700">
               El centro seleccionado no tiene habitaciones disponibles para asociar camas.
             </p>
           )}
-
-          {createMutation.isError && (
-            <p className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-600">
-              Error al crear la cama.
-            </p>
-          )}
-
+          <FormError message={createMutation.isError ? error : null} />
           <div className="flex justify-end gap-3 pt-2">
-            <button
-              type="button"
-              onClick={() => setModalOpen(false)}
-              className="rounded-lg border border-slate-200 px-4 py-2 text-sm font-medium text-slate-600 hover:bg-slate-50"
-            >
+            <ActionButton tone="neutral" onClick={() => setModalOpen(false)}>
               Cancelar
-            </button>
-            <button
+            </ActionButton>
+            <ActionButton
+              tone="primary"
               type="submit"
               disabled={
-                createMutation.isPending ||
-                facilitiesQuery.data?.length === 0 ||
-                !form.room_id
+                createMutation.isPending || facilitiesQuery.data?.length === 0 || !form.room_id
               }
-              className="rounded-lg bg-gradient-to-r from-teal-500 to-cyan-600 px-4 py-2 text-sm font-semibold text-white shadow-md disabled:opacity-50"
             >
               {createMutation.isPending ? 'Guardando...' : 'Guardar'}
-            </button>
+            </ActionButton>
           </div>
         </form>
       </Modal>
@@ -281,7 +374,7 @@ export default function BedsPage() {
             required
             value={targetRoomId}
             onChange={(event) => setTargetRoomId(event.target.value)}
-            className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-teal-500 focus:ring-2 focus:ring-teal-500/20"
+            className={inputClass}
           >
             <option value="">Selecciona habitacion</option>
             {moveRooms.map((room) => (
@@ -290,28 +383,95 @@ export default function BedsPage() {
               </option>
             ))}
           </select>
-          {moveMutation.isError && (
-            <p className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-600">
-              Error al mover la cama.
-            </p>
-          )}
+          <FormError message={moveMutation.isError ? error : null} />
           <div className="flex justify-end gap-3 pt-2">
-            <button
-              type="button"
-              onClick={() => setMovingBed(null)}
-              className="rounded-lg border border-slate-200 px-4 py-2 text-sm font-medium text-slate-600 hover:bg-slate-50"
-            >
+            <ActionButton tone="neutral" onClick={() => setMovingBed(null)}>
               Cancelar
-            </button>
-            <button
-              type="submit"
-              disabled={moveMutation.isPending || !targetRoomId}
-              className="rounded-lg bg-gradient-to-r from-teal-500 to-cyan-600 px-4 py-2 text-sm font-semibold text-white shadow-md disabled:opacity-50"
-            >
+            </ActionButton>
+            <ActionButton tone="primary" type="submit" disabled={moveMutation.isPending || !targetRoomId}>
               {moveMutation.isPending ? 'Moviendo...' : 'Mover'}
-            </button>
+            </ActionButton>
           </div>
         </form>
+      </Modal>
+
+      <Modal
+        open={!!statusBed}
+        onClose={() => setStatusBed(null)}
+        title={`Estado operativo de ${statusBed?.code ?? ''}`}
+      >
+        <form
+          onSubmit={(event) => {
+            event.preventDefault();
+            if (statusBed) statusMutation.mutate({ bedId: statusBed.id, status: nextStatus });
+          }}
+          className="space-y-4"
+        >
+          <p className="text-sm text-slate-500">
+            La ocupacion y la reserva se gestionan desde la internacion. Una cama ocupada o
+            reservada no puede cambiar de estado operativo.
+          </p>
+          <Field label="Nuevo estado">
+            <select
+              value={nextStatus}
+              onChange={(event) => setNextStatus(event.target.value as BedStatus)}
+              className={inputClass}
+            >
+              {OPERATIONAL_STATUSES.map((status) => (
+                <option key={status} value={status}>
+                  {BED_STATUS_LABELS[status]}
+                </option>
+              ))}
+            </select>
+          </Field>
+          <Field label="Motivo">
+            <input
+              type="text"
+              value={statusReason}
+              onChange={(event) => setStatusReason(event.target.value)}
+              placeholder="Obra en la habitacion"
+              className={inputClass}
+            />
+          </Field>
+          <FormError message={statusMutation.isError ? error : null} />
+          <div className="flex justify-end gap-3 pt-2">
+            <ActionButton tone="neutral" onClick={() => setStatusBed(null)}>
+              Cancelar
+            </ActionButton>
+            <ActionButton tone="primary" type="submit" disabled={statusMutation.isPending}>
+              {statusMutation.isPending ? 'Guardando...' : 'Cambiar estado'}
+            </ActionButton>
+          </div>
+        </form>
+      </Modal>
+
+      <Modal
+        open={!!historyBed}
+        onClose={() => setHistoryBed(null)}
+        title={`Historial de ${historyBed?.code ?? ''}`}
+      >
+        {historyQuery.isLoading ? (
+          <Spinner />
+        ) : (historyQuery.data ?? []).length === 0 ? (
+          <EmptyState message="Sin cambios de estado registrados." />
+        ) : (
+          <ol className="space-y-3">
+            {(historyQuery.data ?? []).map((entry) => (
+              <li key={entry.id} className="border-l-2 border-slate-100 pl-4">
+                <p className="text-sm font-semibold text-slate-700">
+                  {entry.previous_status
+                    ? `${BED_STATUS_LABELS[entry.previous_status]} → ${BED_STATUS_LABELS[entry.new_status]}`
+                    : BED_STATUS_LABELS[entry.new_status]}
+                </p>
+                <p className="text-xs text-slate-400">
+                  {formatDateTime(entry.changed_at)}
+                  {entry.changed_by ? ` · ${entry.changed_by}` : ''}
+                  {entry.reason ? ` · ${entry.reason}` : ''}
+                </p>
+              </li>
+            ))}
+          </ol>
+        )}
       </Modal>
     </div>
   );

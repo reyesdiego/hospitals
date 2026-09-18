@@ -16,4 +16,6 @@ export interface BedRead {
   room: string;
   status: BedStatus;
   patient?: PatientRead | null;
+  reserved_for?: PatientRead | null;
+  reservation_expires_at?: string | null;
 }

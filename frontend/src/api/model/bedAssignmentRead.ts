@@ -4,13 +4,11 @@
  * Hospital Internment API
  * OpenAPI spec version: 0.1.0
  */
-import type { BedStatus } from './bedStatus';
 
 export interface BedAssignmentRead {
   id: string;
-  hospitalization_id: string | null;
+  hospitalization_id: string;
   bed_id: string;
-  status: BedStatus;
   started_at: string;
   ended_at: string | null;
   assignment_reason?: string | null;

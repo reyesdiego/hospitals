@@ -1,5 +1,6 @@
 import type { BedRead, PatientRead } from '@/api/model';
 import { BedStatusBadge } from '@/components/StatusBadges';
+import { formatDateTime } from '@/utils/format';
 
 function calculateAge(birthDate: string | null | undefined): number | null {
   if (!birthDate) return null;
@@ -54,16 +55,25 @@ export function BedCard({
         <BedStatusBadge status={bed.status} />
       </div>
 
-      {
-        bed.patient ?
-          <div className="mt-3 border-t border-slate-100 pt-3">
-            <p className="truncate text-sm font-semibold text-slate-700">
-              {patientName(bed.patient)}
-            </p>
-            <p className="mt-0.5 truncate text-xs text-slate-400">{patientDetails}</p>
-          </div>
-            : null
-      }
+      {bed.patient ? (
+        <div className="mt-3 border-t border-slate-100 pt-3">
+          <p className="truncate text-sm font-semibold text-slate-700">
+            {patientName(bed.patient)}
+          </p>
+          <p className="mt-0.5 truncate text-xs text-slate-400">{patientDetails}</p>
+        </div>
+      ) : bed.reserved_for ? (
+        <div className="mt-3 border-t border-slate-100 pt-3">
+          <p className="truncate text-sm font-semibold text-amber-700">
+            Reservada: {patientName(bed.reserved_for)}
+          </p>
+          <p className="mt-0.5 truncate text-xs text-amber-600">
+            {bed.reservation_expires_at
+              ? `Vence ${formatDateTime(bed.reservation_expires_at)}`
+              : 'Sin vencimiento'}
+          </p>
+        </div>
+      ) : null}
     </div>
   );
 }

@@ -9,6 +9,7 @@ import type { EpisodeStatus } from './episodeStatus';
 export interface EpisodeRead {
   id: string;
   patient_id: string;
+  facility_id: string | null;
   episode_number: string;
   status: EpisodeStatus;
   reason: string;

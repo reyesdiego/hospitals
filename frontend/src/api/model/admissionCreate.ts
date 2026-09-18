@@ -14,6 +14,7 @@ export interface AdmissionCreate {
   patient_id: string;
   origin: AdmissionOrigin;
   admission_type: AdmissionType;
+  facility_id?: string | null;
   identity_validated?: boolean;
   duplicate_checked?: boolean;
   coverage_id?: string | null;
@@ -41,6 +42,7 @@ export interface AdmissionCreate {
      * @maxLength 150
      */
   responsible_physician: string;
+  responsible_physician_id?: string | null;
   requesting_service_id?: string | null;
   presumptive_diagnosis?: string | null;
   requested_bed_id?: string | null;

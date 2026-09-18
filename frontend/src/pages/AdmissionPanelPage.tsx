@@ -1,8 +1,10 @@
 import { useMemo, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { getDefault } from '@/api/endpoints/default/default';
 import type { AdmissionCreate, PatientCreate } from '@/api/model';
 import { Badge, Card, EmptyState, ErrorState, PageHeader, Spinner } from '@/components/ui';
+import { ADMISSION_STATUS_COLORS, ADMISSION_STATUS_LABELS } from '@/config/workflowLabels';
 import {
   BedDouble,
   CheckCircle2,
@@ -21,15 +23,6 @@ const ORIGIN_LABELS = {
   HOME_HOSPITALIZATION: 'Internacion domiciliaria',
   SPECIAL_CARE_UNIT: 'Unidad cuidados especiales',
   SCHEDULED_MEDICAL_ORDER: 'Orden medica programada',
-} as const;
-
-const STATUS_LABELS = {
-  PRE_ADMITTED: 'Pre-admision',
-  PENDING_AUTHORIZATION: 'Pendiente autorizacion',
-  PENDING_BED: 'Pendiente cama',
-  ADMITTED: 'Ingresado',
-  ADMINISTRATIVE_DISCHARGE: 'Alta administrativa',
-  CANCELLED: 'Cancelado',
 } as const;
 
 const initialPatient: PatientCreate = {
@@ -69,6 +62,7 @@ const initialAdmission: AdmissionCreate = {
 
 export default function AdmissionPanelPage() {
   const api = getDefault();
+  const navigate = useNavigate();
   const queryClient = useQueryClient();
   const [search, setSearch] = useState('');
   const [patientForm, setPatientForm] = useState<PatientCreate>(initialPatient);
@@ -107,12 +101,16 @@ export default function AdmissionPanelPage() {
 
   const createAdmissionMutation = useMutation({
     mutationFn: (data: AdmissionCreate) => api.createAdmissionApiV1AdmissionsPost(data),
-    onSuccess: () => {
+    onSuccess: (admission) => {
       queryClient.invalidateQueries({ queryKey: ['admissions'] });
       queryClient.invalidateQueries({ queryKey: ['hospitalizations'] });
       queryClient.invalidateQueries({ queryKey: ['beds'] });
       setAdmissionForm(initialAdmission);
       setSignedConsents({ GENERAL_ADMISSION: false, DATA_PROCESSING: false, PROCEDURE: false });
+      // The request creates the hospitalization: continue the flow on it.
+      if (admission.hospitalization_id) {
+        navigate(`/hospitalizations/${admission.hospitalization_id}`);
+      }
     },
   });
 
@@ -577,27 +575,36 @@ export default function AdmissionPanelPage() {
                         </p>
                       </div>
                       <Badge
-                        status={STATUS_LABELS[admission.status]}
-                        color={
-                          admission.status === 'ADMITTED'
-                            ? 'bg-emerald-50 text-emerald-700'
-                            : 'bg-cyan-50 text-cyan-700'
-                        }
+                        status={ADMISSION_STATUS_LABELS[admission.status]}
+                        color={ADMISSION_STATUS_COLORS[admission.status]}
                       />
                     </div>
                     <p className="mt-2 line-clamp-2 text-xs text-slate-500">
                       {admission.admission_reason}
                     </p>
-                    {admission.status !== 'ADMINISTRATIVE_DISCHARGE' && (
-                      <button
-                        type="button"
-                        onClick={() => dischargeMutation.mutate(admission.id)}
-                        disabled={dischargeMutation.isPending}
-                        className="mt-3 rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-semibold text-slate-600 hover:bg-slate-50 disabled:opacity-50"
-                      >
-                        Alta administrativa
-                      </button>
-                    )}
+                    <div className="mt-3 flex flex-wrap gap-2">
+                      {admission.hospitalization_id && (
+                        <button
+                          type="button"
+                          onClick={() =>
+                            navigate(`/hospitalizations/${admission.hospitalization_id}`)
+                          }
+                          className="rounded-lg bg-teal-50 px-3 py-1.5 text-xs font-semibold text-teal-700 hover:bg-teal-100"
+                        >
+                          Ver internacion
+                        </button>
+                      )}
+                      {admission.status !== 'ADMINISTRATIVE_DISCHARGE' && (
+                        <button
+                          type="button"
+                          onClick={() => dischargeMutation.mutate(admission.id)}
+                          disabled={dischargeMutation.isPending}
+                          className="rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-semibold text-slate-600 hover:bg-slate-50 disabled:opacity-50"
+                        >
+                          Alta administrativa
+                        </button>
+                      )}
+                    </div>
                   </div>
                 ))}
               </div>

@@ -19,6 +19,7 @@ export interface AdmissionDashboardRead {
   episode_id: string | null;
   hospitalization_id: string | null;
   coverage_id: string | null;
+  facility_id: string | null;
   requesting_service_id: string | null;
   requested_bed_id: string | null;
   origin: AdmissionOrigin;
@@ -33,8 +34,10 @@ export interface AdmissionDashboardRead {
   responsible_contact_relationship: string | null;
   admission_reason: string;
   responsible_physician: string;
+  responsible_physician_id: string | null;
   presumptive_diagnosis: string | null;
   notes: string | null;
+  requested_at: string | null;
   admitted_at: string | null;
   administrative_discharged_at: string | null;
   created_at: string;

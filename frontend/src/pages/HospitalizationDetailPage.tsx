@@ -1,17 +1,20 @@
-import { useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useQuery } from '@tanstack/react-query';
 import { getDefault } from '@/api/endpoints/default/default';
-import type { BedAssignmentCreate } from '@/api/model';
+import { getHospitalizationWorkflow } from '@/api/endpoints/hospitalization-workflow/hospitalization-workflow';
 import { useAuth } from '@/auth/AuthContext';
-import { PageHeader, Card, Spinner, ErrorState } from '@/components/ui';
-import { HospitalizationStatusBadge } from '@/components/StatusBadges';
-import Modal from '@/components/Modal';
-import { ArrowLeft, BedDouble, Unlock, User, Calendar, FileText } from 'lucide-react';
-
-function formatDateTime(value: string | null | undefined) {
-  return value ? new Date(value).toLocaleString('es-ES') : null;
-}
+import AccountCard from '@/components/hospitalization/AccountCard';
+import AdmissionCard from '@/components/hospitalization/AdmissionCard';
+import BedManagementCard from '@/components/hospitalization/BedManagementCard';
+import CareTeamCard from '@/components/hospitalization/CareTeamCard';
+import DischargeCard from '@/components/hospitalization/DischargeCard';
+import EventsCard from '@/components/hospitalization/EventsCard';
+import LifecycleCard from '@/components/hospitalization/LifecycleCard';
+import PracticesCard from '@/components/hospitalization/PracticesCard';
+import ServiceAssignmentsCard from '@/components/hospitalization/ServiceAssignmentsCard';
+import { Card, ErrorState, InfoRow, PageHeader, SectionTitle, Spinner } from '@/components/ui';
+import { formatDate } from '@/utils/format';
+import { ArrowLeft, FileText, User } from 'lucide-react';
 
 function ageAtDate(birthDate: string | null | undefined, referenceDate: string | null | undefined) {
   if (!birthDate || !referenceDate) return null;
@@ -30,70 +33,28 @@ export default function HospitalizationDetailPage() {
   const navigate = useNavigate();
   const { user } = useAuth();
   const api = getDefault();
-  const queryClient = useQueryClient();
-  const [assignOpen, setAssignOpen] = useState(false);
-  const [assignBedId, setAssignBedId] = useState('');
+  const workflowApi = getHospitalizationWorkflow();
 
-  const canManage = user && ['admin', 'doctor', 'nurse'].includes(user.role);
+  const canManage = Boolean(user && ['admin', 'doctor', 'nurse'].includes(user.role));
 
+  const hospitalizationQuery = useQuery({
+    queryKey: ['hospitalization', id],
+    queryFn: () =>
+      workflowApi.getHospitalizationApiV1HospitalizationsHospitalizationIdGet(id ?? ''),
+    enabled: Boolean(id),
+    retry: false,
+  });
   const patientsQuery = useQuery({
     queryKey: ['patients'],
     queryFn: () => api.listPatientsApiV1PatientsGet(),
   });
-  const bedsQuery = useQuery({
-    queryKey: ['beds'],
-    queryFn: () => api.listBedsApiV1BedsGet(),
-  });
-  const bedAssignmentsQuery = useQuery({
-    queryKey: ['hospitalization-bed-assignments', id],
-    queryFn: () =>
-      api.listHospitalizationBedAssignmentsApiV1HospitalizationsHospitalizationIdBedAssignmentsGet(
-        id ?? '',
-      ),
-    enabled: Boolean(id),
-  });
-  const hospitalizationsQuery = useQuery({
-    queryKey: ['hospitalizations'],
-    queryFn: () => api.listHospitalizationsApiV1HospitalizationsGet(),
-  });
 
-  const hosp = hospitalizationsQuery.data?.find((h) => h.id === id);
+  const hosp = hospitalizationQuery.data;
 
-  const availableBeds = (bedsQuery.data ?? []).filter((b) => b.status === 'AVAILABLE');
-
-  const releaseMutation = useMutation({
-    mutationFn: (hospId: string) =>
-      api.releaseBedApiV1HospitalizationsHospitalizationIdReleaseBedPost(hospId),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['beds'] });
-      queryClient.invalidateQueries({ queryKey: ['hospitalizations'] });
-      queryClient.invalidateQueries({ queryKey: ['hospitalization-bed-assignments', id] });
-      navigate('/hospitalizations');
-    },
-  });
-
-  const assignMutation = useMutation({
-    mutationFn: ({ hospId, bedId }: { hospId: string; bedId: string }) => {
-      const body: BedAssignmentCreate = { bed_id: bedId };
-      return api.assignBedApiV1HospitalizationsHospitalizationIdBedAssignmentsPost(hospId, body);
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['beds'] });
-      queryClient.invalidateQueries({ queryKey: ['hospitalizations'] });
-      queryClient.invalidateQueries({ queryKey: ['hospitalization-bed-assignments', id] });
-      setAssignOpen(false);
-      setAssignBedId('');
-    },
-  });
-
-  if (
-    patientsQuery.isLoading ||
-    bedsQuery.isLoading ||
-    hospitalizationsQuery.isLoading ||
-    bedAssignmentsQuery.isLoading
-  ) {
+  if (hospitalizationQuery.isLoading || patientsQuery.isLoading) {
     return <Spinner />;
   }
+
   if (!hosp) {
     return (
       <div>
@@ -109,19 +70,11 @@ export default function HospitalizationDetailPage() {
     );
   }
 
-  const patient = patientsQuery.data?.find((p) => p.id === hosp.patient_id);
+  const patient = patientsQuery.data?.find((item) => item.id === hosp.patient_id);
   const patientName = patient
     ? `${patient.first_name} ${patient.last_name}`
     : 'Paciente desconocido';
   const patientAgeAtAdmission = ageAtDate(patient?.birth_date, hosp.admitted_at);
-  const bedAssignments = bedAssignmentsQuery.data ?? [];
-  const bedsById = new Map((bedsQuery.data ?? []).map((bed) => [bed.id, bed]));
-
-  const handleAssign = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!id || !assignBedId) return;
-    assignMutation.mutate({ hospId: id, bedId: assignBedId });
-  };
 
   return (
     <div>
@@ -133,138 +86,43 @@ export default function HospitalizationDetailPage() {
         Volver a hospitalizaciones
       </button>
 
-      <PageHeader
-        title={patientName}
-        subtitle={`Hospitalizacion #${hosp.id.slice(0, 8)}`}
-      />
+      <PageHeader title={patientName} subtitle={`Internacion #${hosp.id.slice(0, 8)}`} />
 
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
-        {/* Main info */}
         <div className="space-y-6 lg:col-span-2">
           <Card className="p-6">
-            <h3 className="mb-4 flex items-center gap-2 text-lg font-bold text-slate-800">
-              <FileText className="h-5 w-5 text-teal-600" />
-              Informacion de la hospitalizacion
-            </h3>
-            <div className="space-y-4">
-              <div className="flex items-center justify-between rounded-lg bg-slate-50 px-4 py-3">
-                <span className="text-sm font-medium text-slate-500">Estado</span>
-                <HospitalizationStatusBadge status={hosp.status as never} />
-              </div>
+            <SectionTitle icon={<FileText className="h-5 w-5 text-teal-600" />}>
+              Informacion de la internacion
+            </SectionTitle>
+            <div className="space-y-3">
               <div>
                 <p className="mb-1 text-sm font-medium text-slate-500">Motivo de ingreso</p>
                 <p className="rounded-lg bg-slate-50 px-4 py-3 text-sm text-slate-700">
                   {hosp.admission_reason}
                 </p>
               </div>
-              <div className="flex items-center gap-2 rounded-lg bg-slate-50 px-4 py-3">
-                <Calendar className="h-4 w-4 text-slate-400" />
-                <span className="text-sm text-slate-500">Fecha de ingreso:</span>
-                <span className="text-sm font-semibold text-slate-700">
-                  {formatDateTime(hosp.admitted_at) ?? 'Pendiente de asignacion de cama'}
-                </span>
-              </div>
-              <div className="flex items-center gap-2 rounded-lg bg-slate-50 px-4 py-3">
-                <Calendar className="h-4 w-4 text-slate-400" />
-                <span className="text-sm text-slate-500">Fecha de alta:</span>
-                <span className="text-sm font-semibold text-slate-700">
-                  {formatDateTime(hosp.discharged_at) ?? 'Sin alta registrada'}
-                </span>
-              </div>
-              <div className="flex items-center justify-between rounded-lg bg-slate-50 px-4 py-3">
-                <span className="text-sm font-medium text-slate-500">
-                  Edad al momento de la internacion
-                </span>
-                <span className="text-sm font-semibold text-slate-700">
-                  {patientAgeAtAdmission !== null
-                    ? `${patientAgeAtAdmission} años`
-                    : 'No disponible'}
-                </span>
-              </div>
+              <InfoRow
+                label="Edad al momento de la internacion"
+                value={
+                  patientAgeAtAdmission !== null ? `${patientAgeAtAdmission} años` : 'No disponible'
+                }
+              />
             </div>
           </Card>
 
-          {/* Bed management */}
-          <Card className="p-6">
-            <h3 className="mb-4 flex items-center gap-2 text-lg font-bold text-slate-800">
-              <BedDouble className="h-5 w-5 text-teal-600" />
-              Gestion de cama
-            </h3>
-            <div className="space-y-4">
-              <div className="rounded-lg border border-slate-100">
-                <div className="border-b border-slate-100 px-4 py-3">
-                  <p className="text-sm font-semibold text-slate-700">
-                    Camas y habitaciones utilizadas
-                  </p>
-                </div>
-                {bedAssignments.length === 0 ? (
-                  <p className="px-4 py-3 text-sm text-slate-400">
-                    No hay asignaciones de cama registradas.
-                  </p>
-                ) : (
-                  <div className="divide-y divide-slate-100">
-                    {bedAssignments.map((assignment) => {
-                      const bed = bedsById.get(assignment.bed_id);
-                      return (
-                        <div key={assignment.id} className="px-4 py-3">
-                          <div className="flex items-start justify-between gap-3">
-                            <div>
-                              <p className="text-sm font-semibold text-slate-700">
-                                {bed?.code ?? `Cama ${assignment.bed_id.slice(0, 8)}`}
-                              </p>
-                              <p className="text-xs text-slate-500">
-                                {bed
-                                  ? `${bed.ward} · Hab. ${bed.room}`
-                                  : 'Habitacion no disponible'}
-                              </p>
-                            </div>
-                            <span className="rounded-md bg-slate-100 px-2 py-1 text-xs font-semibold text-slate-500">
-                              {assignment.ended_at ? 'Finalizada' : 'Actual'}
-                            </span>
-                          </div>
-                          <p className="mt-2 text-xs text-slate-400">
-                            {formatDateTime(assignment.started_at)} -{' '}
-                            {formatDateTime(assignment.ended_at) ?? 'Actualidad'}
-                          </p>
-                        </div>
-                      );
-                    })}
-                  </div>
-                )}
-              </div>
-              {canManage && hosp.status === 'PENDING_BED' && (
-                <button
-                  onClick={() => setAssignOpen(true)}
-                  className="flex items-center gap-2 rounded-lg bg-teal-50 px-4 py-2.5 text-sm font-semibold text-teal-700 transition-colors hover:bg-teal-100"
-                >
-                  <BedDouble className="h-4 w-4" />
-                  Asignar cama
-                </button>
-              )}
-              {canManage && hosp.status === 'IN_PROGRESS' && (
-                <button
-                  onClick={() => releaseMutation.mutate(hosp.id)}
-                  disabled={releaseMutation.isPending}
-                  className="flex w-full items-center justify-center gap-2 rounded-lg bg-amber-50 px-4 py-2.5 text-sm font-semibold text-amber-700 transition-colors hover:bg-amber-100 disabled:opacity-50"
-                >
-                  <Unlock className="h-4 w-4" />
-                  {releaseMutation.isPending ? 'Liberando...' : 'Liberar cama'}
-                </button>
-              )}
-              {hosp.status !== 'PENDING_BED' && hosp.status !== 'IN_PROGRESS' && (
-                <p className="text-sm text-slate-400">Sin acciones pendientes.</p>
-              )}
-            </div>
-          </Card>
+          <LifecycleCard hosp={hosp} />
+          <AdmissionCard hosp={hosp} />
+          <BedManagementCard hosp={hosp} canManage={canManage} />
+          <PracticesCard hosp={hosp} canManage={canManage} />
+          <AccountCard hosp={hosp} canManage={canManage} />
+          <DischargeCard hosp={hosp} canManage={canManage} />
         </div>
 
-        {/* Patient sidebar */}
-        <div>
+        <div className="space-y-6">
           <Card className="p-6">
-            <h3 className="mb-4 flex items-center gap-2 text-lg font-bold text-slate-800">
-              <User className="h-5 w-5 text-teal-600" />
+            <SectionTitle icon={<User className="h-5 w-5 text-teal-600" />}>
               Datos del paciente
-            </h3>
+            </SectionTitle>
             {patient ? (
               <div className="space-y-3">
                 <div className="flex items-center gap-3 rounded-lg bg-slate-50 p-4">
@@ -285,7 +143,7 @@ export default function HospitalizationDetailPage() {
                   <div className="flex justify-between">
                     <span className="text-slate-400">Fecha nacimiento</span>
                     <span className="font-medium text-slate-600">
-                      {patient.birth_date ?? '—'}
+                      {formatDate(patient.birth_date) ?? '—'}
                     </span>
                   </div>
                   <div className="flex justify-between">
@@ -297,66 +155,15 @@ export default function HospitalizationDetailPage() {
                 </div>
               </div>
             ) : (
-              <p className="text-sm text-slate-400">
-                No se encontraron datos del paciente.
-              </p>
+              <p className="text-sm text-slate-400">No se encontraron datos del paciente.</p>
             )}
           </Card>
+
+          <ServiceAssignmentsCard hosp={hosp} canManage={canManage} />
+          <CareTeamCard hosp={hosp} canManage={canManage} />
+          <EventsCard hospitalizationId={hosp.id} />
         </div>
       </div>
-
-      {/* Assign bed modal */}
-      <Modal open={assignOpen} onClose={() => setAssignOpen(false)} title="Asignar cama">
-        <form onSubmit={handleAssign} className="space-y-4">
-          <div>
-            <label className="mb-1.5 block text-sm font-medium text-slate-600">
-              Cama disponible
-            </label>
-            {availableBeds.length === 0 ? (
-              <p className="rounded-lg bg-amber-50 px-3 py-2 text-sm text-amber-700">
-                No hay camas disponibles en este momento.
-              </p>
-            ) : (
-              <select
-                required
-                value={assignBedId}
-                onChange={(e) => setAssignBedId(e.target.value)}
-                className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-teal-500 focus:ring-2 focus:ring-teal-500/20"
-              >
-                <option value="">Selecciona una cama...</option>
-                {availableBeds.map((b) => (
-                  <option key={b.id} value={b.id}>
-                    {b.code} - {b.ward} (Hab. {b.room})
-                  </option>
-                ))}
-              </select>
-            )}
-          </div>
-
-          {assignMutation.isError && (
-            <p className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-600">
-              Error al asignar la cama.
-            </p>
-          )}
-
-          <div className="flex justify-end gap-3 pt-2">
-            <button
-              type="button"
-              onClick={() => setAssignOpen(false)}
-              className="rounded-lg border border-slate-200 px-4 py-2 text-sm font-medium text-slate-600 hover:bg-slate-50"
-            >
-              Cancelar
-            </button>
-            <button
-              type="submit"
-              disabled={assignMutation.isPending || availableBeds.length === 0}
-              className="rounded-lg bg-gradient-to-r from-teal-500 to-cyan-600 px-4 py-2 text-sm font-semibold text-white shadow-md disabled:opacity-50"
-            >
-              {assignMutation.isPending ? 'Asignando...' : 'Asignar'}
-            </button>
-          </div>
-        </form>
-      </Modal>
     </div>
   );
 }

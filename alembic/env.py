@@ -12,7 +12,14 @@ config=context.config; config.set_main_option("sqlalchemy.url",settings.database
 if config.config_file_name: fileConfig(config.config_file_name)
 target_metadata=Base.metadata
 def do_run(connection):
-    context.configure(connection=connection,target_metadata=target_metadata,compare_type=True)
+    # One transaction per migration keeps PostgreSQL ENUM changes (ALTER TYPE ... ADD VALUE)
+    # isolated from the migrations that later use the new values.
+    context.configure(
+        connection=connection,
+        target_metadata=target_metadata,
+        compare_type=True,
+        transaction_per_migration=True,
+    )
     with context.begin_transaction(): context.run_migrations()
 async def run_async():
     engine=async_engine_from_config(config.get_section(config.config_ini_section,{}),prefix="sqlalchemy.",poolclass=pool.NullPool)

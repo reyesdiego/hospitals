@@ -1,9 +1,24 @@
 import { axiosInstance } from './custom-instance';
+import {
+  admissionWithEffectiveStatus,
+  loadDB,
+  now,
+  saveDB,
+  STORAGE_KEY,
+  toAdmissionRead,
+  uuid,
+} from './mock-db';
+import { handleAccountRequest } from './mock-account';
+import { handlePracticeRequest } from './mock-practices';
+import {
+  completeReservationForBed,
+  handleWorkflowRequest,
+  recordBedStatus,
+  recordEvent,
+} from './mock-workflow';
 import type {
   AdmissionDashboardRead,
-  AdmissionRead,
   AdmissionStatus,
-  AuthorizationStatus,
   BedAssignmentRead,
   BedRead,
   BedStatus,
@@ -13,329 +28,7 @@ import type {
   PatientCoverageRead,
   PatientRead,
   RoomRead,
-  RoomStatus,
-  ServiceRead,
 } from './model';
-
-const STORAGE_KEY = 'hosp_mock_db_v1';
-
-type MockDB = {
-  patients: PatientRead[];
-  facilities: FacilityRead[];
-  beds: BedRead[];
-  rooms: RoomRead[];
-  services: ServiceRead[];
-  hospitalizations: HospitalizationRead[];
-  bedAssignments: BedAssignmentRead[];
-  coverages: PatientCoverageRead[];
-  admissions: AdmissionDashboardRead[];
-};
-
-function uuid(): string {
-  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
-    const r = (Math.random() * 16) | 0;
-    const v = c === 'x' ? r : (r & 0x3) | 0x8;
-    return v.toString(16);
-  });
-}
-
-function now(): string {
-  return new Date().toISOString();
-}
-
-function toAdmissionRead(admission: AdmissionDashboardRead): AdmissionRead {
-  const read: Partial<AdmissionDashboardRead> = { ...admission };
-  delete read.patient;
-  delete read.episode;
-  delete read.coverage;
-  delete read.consents;
-  return read as AdmissionRead;
-}
-
-function admissionWithEffectiveStatus(
-  admission: AdmissionDashboardRead,
-  db: MockDB,
-): AdmissionDashboardRead {
-  if (admission.status !== 'PENDING_BED' || !admission.hospitalization_id) return admission;
-  const hospitalization = db.hospitalizations.find((item) => item.id === admission.hospitalization_id);
-  if (hospitalization?.status !== 'IN_PROGRESS') return admission;
-  return {
-    ...admission,
-    status: 'ADMITTED' as AdmissionStatus,
-    admitted_at: admission.admitted_at ?? hospitalization.admitted_at,
-  };
-}
-
-function seed(): MockDB {
-  const facilities: FacilityRead[] = [
-    {
-      id: 'fac-001',
-      name: 'Hospital General Central',
-      code: 'HGC',
-      created_at: '2025-01-15T10:00:00Z',
-    },
-    {
-      id: 'fac-002',
-      name: 'Clinica Santa Maria',
-      code: 'CSM',
-      created_at: '2025-02-20T10:00:00Z',
-    },
-  ];
-
-  const rooms: RoomRead[] = [
-    {
-      id: 'room-101',
-      facility_id: 'fac-001',
-      code: '101',
-      ward: 'Cardiologia',
-      status: 'AVAILABLE' as RoomStatus,
-      created_at: '2025-01-15T10:00:00Z',
-    },
-    {
-      id: 'room-102',
-      facility_id: 'fac-001',
-      code: '102',
-      ward: 'Cardiologia',
-      status: 'OCCUPIED' as RoomStatus,
-      created_at: '2025-01-15T10:00:00Z',
-    },
-    {
-      id: 'room-201',
-      facility_id: 'fac-001',
-      code: '201',
-      ward: 'Pediatria',
-      status: 'AVAILABLE' as RoomStatus,
-      created_at: '2025-01-15T10:00:00Z',
-    },
-    {
-      id: 'room-301',
-      facility_id: 'fac-002',
-      code: '301',
-      ward: 'Urgencias',
-      status: 'PENDING_CLEANING' as RoomStatus,
-      created_at: '2025-02-20T10:00:00Z',
-    },
-    {
-      id: 'room-302',
-      facility_id: 'fac-002',
-      code: '302',
-      ward: 'Urgencias',
-      status: 'MAINTENANCE' as RoomStatus,
-      created_at: '2025-02-20T10:00:00Z',
-    },
-  ];
-
-  const beds: BedRead[] = [
-    {
-      id: 'bed-001',
-      facility_id: 'fac-001',
-      room_id: 'room-101',
-      code: 'A-101',
-      ward: 'Cardiologia',
-      room: '101',
-      status: 'AVAILABLE' as BedStatus,
-    },
-    {
-      id: 'bed-002',
-      facility_id: 'fac-001',
-      room_id: 'room-102',
-      code: 'A-102',
-      ward: 'Cardiologia',
-      room: '102',
-      status: 'OCCUPIED' as BedStatus,
-    },
-    {
-      id: 'bed-003',
-      facility_id: 'fac-001',
-      room_id: 'room-201',
-      code: 'B-201',
-      ward: 'Pediatria',
-      room: '201',
-      status: 'AVAILABLE' as BedStatus,
-    },
-    {
-      id: 'bed-004',
-      facility_id: 'fac-002',
-      room_id: 'room-301',
-      code: 'C-301',
-      ward: 'Urgencias',
-      room: '301',
-      status: 'PENDING_CLEANING' as BedStatus,
-    },
-    {
-      id: 'bed-005',
-      facility_id: 'fac-002',
-      room_id: 'room-302',
-      code: 'C-302',
-      ward: 'Urgencias',
-      room: '302',
-      status: 'MAINTENANCE' as BedStatus,
-    },
-  ];
-
-  const patients: PatientRead[] = [
-    {
-      id: 'pat-001',
-      first_name: 'Juan',
-      last_name: 'Perez',
-      document_type: 'DNI',
-      document_number: '12345678',
-      birth_date: '1985-03-15',
-      created_at: '2025-06-01T08:00:00Z',
-    },
-    {
-      id: 'pat-002',
-      first_name: 'Maria',
-      last_name: 'Garcia',
-      document_type: 'DNI',
-      document_number: '87654321',
-      birth_date: '1990-07-22',
-      created_at: '2025-06-15T08:00:00Z',
-    },
-    {
-      id: 'pat-003',
-      first_name: 'Carlos',
-      last_name: 'Rodriguez',
-      document_type: 'PASSPORT',
-      document_number: 'AB123456',
-      birth_date: null,
-      created_at: '2025-07-01T08:00:00Z',
-    },
-  ];
-
-  beds[1].patient = patients[0];
-
-  const services: ServiceRead[] = [
-    { id: 'srv-001', name: 'Cardiologia', code: 'CAR', created_at: '2025-01-01T08:00:00Z' },
-    { id: 'srv-002', name: 'Cirugia', code: 'CIR', created_at: '2025-01-01T08:00:00Z' },
-    { id: 'srv-003', name: 'Urgencias', code: 'URG', created_at: '2025-01-01T08:00:00Z' },
-  ];
-
-  const coverages: PatientCoverageRead[] = [
-    {
-      id: 'cov-001',
-      patient_id: 'pat-001',
-      payer_name: 'OSDE',
-      plan_name: '210',
-      member_number: '998877',
-      authorization_required: true,
-      created_at: '2025-07-20T13:30:00Z',
-    },
-  ];
-
-  const hospitalizations: HospitalizationRead[] = [
-    {
-      id: 'hosp-001',
-      patient_id: 'pat-001',
-      status: 'IN_PROGRESS' as HospitalizationStatus,
-      admission_reason: 'Dolor toracico agudo - evaluacion cardiaca',
-      admitted_at: '2025-07-20T14:30:00Z',
-      discharged_at: null,
-    },
-    {
-      id: 'hosp-002',
-      patient_id: 'pat-002',
-      status: 'PENDING_BED' as HospitalizationStatus,
-      admission_reason: 'Post-operatorio - observacion',
-      admitted_at: null,
-      discharged_at: null,
-    },
-  ];
-
-  const bedAssignments: BedAssignmentRead[] = [
-    {
-      id: 'asg-001',
-      hospitalization_id: 'hosp-001',
-      bed_id: 'bed-002',
-      status: 'OCCUPIED' as BedStatus,
-      started_at: '2025-07-20T15:00:00Z',
-      ended_at: null,
-    },
-  ];
-
-  const admissions: AdmissionDashboardRead[] = [
-    {
-      id: 'adm-001',
-      patient_id: 'pat-001',
-      patient: patients[0],
-      episode_id: 'epi-001',
-      episode: {
-        id: 'epi-001',
-        patient_id: 'pat-001',
-        episode_number: 'EPI-20250720143000-DEMO',
-        status: 'OPEN',
-        reason: 'Dolor toracico agudo - evaluacion cardiaca',
-        opened_at: '2025-07-20T14:30:00Z',
-        closed_at: null,
-      },
-      hospitalization_id: 'hosp-001',
-      coverage_id: 'cov-001',
-      coverage: coverages[0],
-      requesting_service_id: 'srv-001',
-      requested_bed_id: 'bed-002',
-      origin: 'EMERGENCY_ROOM',
-      admission_type: 'EMERGENCY',
-      status: 'ADMITTED' as AdmissionStatus,
-      identity_validated: true,
-      duplicate_checked: true,
-      authorization_status: 'AUTHORIZED' as AuthorizationStatus,
-      authorization_number: 'AUT-4455',
-      responsible_contact_name: 'Ana Perez',
-      responsible_contact_phone: '+54 11 5555-1010',
-      responsible_contact_relationship: 'Conyuge',
-      admission_reason: 'Dolor toracico agudo - evaluacion cardiaca',
-      responsible_physician: 'Dra. Alvarez',
-      presumptive_diagnosis: 'Sindrome coronario a descartar',
-      notes: null,
-      admitted_at: '2025-07-20T15:00:00Z',
-      administrative_discharged_at: null,
-      consents: [
-        {
-          id: 'con-001',
-          admission_id: 'adm-001',
-          consent_type: 'GENERAL_ADMISSION',
-          signed_by: 'Ana Perez',
-          signed_at: '2025-07-20T14:40:00Z',
-          notes: null,
-          created_at: '2025-07-20T14:40:00Z',
-        },
-      ],
-      created_at: '2025-07-20T14:30:00Z',
-    },
-  ];
-
-  return { patients, facilities, beds, rooms, services, hospitalizations, bedAssignments, coverages, admissions };
-}
-
-function loadDB(): MockDB {
-  const raw = localStorage.getItem(STORAGE_KEY);
-  if (raw) {
-    try {
-      const parsed = JSON.parse(raw) as Partial<MockDB>;
-      const seeded = seed();
-      return {
-        patients: parsed.patients ?? seeded.patients,
-        facilities: parsed.facilities ?? seeded.facilities,
-        beds: parsed.beds ?? seeded.beds,
-        rooms: parsed.rooms ?? seeded.rooms,
-        services: parsed.services ?? seeded.services,
-        hospitalizations: parsed.hospitalizations ?? seeded.hospitalizations,
-        bedAssignments: parsed.bedAssignments ?? seeded.bedAssignments,
-        coverages: parsed.coverages ?? seeded.coverages,
-        admissions: parsed.admissions ?? seeded.admissions,
-      };
-    } catch {
-      // fall through to seed
-    }
-  }
-  const db = seed();
-  saveDB(db);
-  return db;
-}
-
-function saveDB(db: MockDB) {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(db));
-}
 
 function delay(ms = 300) {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -347,13 +40,33 @@ function setupMockAdapter() {
     const url = config.url ?? '';
     const method = (config.method ?? 'get').toLowerCase();
     const db = loadDB();
+    const body = config.data ? JSON.parse(config.data) : {};
+
+    const catalog =
+      handlePracticeRequest(db, url, method, body, config.params ?? {}) ??
+      handleAccountRequest(db, url, method, body);
+    const workflow = catalog ?? handleWorkflowRequest(db, url, method, body);
+    if (workflow) {
+      if (workflow.kind === 'error') {
+        return Promise.reject({
+          response: { status: workflow.status, data: { detail: workflow.detail } },
+          config,
+        });
+      }
+      return {
+        data: workflow.data,
+        status: workflow.status,
+        statusText: workflow.status === 201 ? 'Created' : 'OK',
+        headers: {},
+        config,
+      };
+    }
 
     // Patients
     if (url === '/api/v1/patients' && method === 'get') {
       return { data: db.patients, status: 200, statusText: 'OK', headers: {}, config };
     }
     if (url === '/api/v1/patients' && method === 'post') {
-      const body = JSON.parse(config.data);
       const patient: PatientRead = {
         id: uuid(),
         first_name: body.first_name,
@@ -373,7 +86,6 @@ function setupMockAdapter() {
       if (!patient) {
         return Promise.reject({ response: { status: 404, data: { detail: 'Paciente inexistente' } }, config });
       }
-      const body = JSON.parse(config.data);
       patient.first_name = body.first_name;
       patient.last_name = body.last_name;
       patient.document_type = body.document_type;
@@ -418,14 +130,18 @@ function setupMockAdapter() {
     }
     if (coveragesMatch && method === 'post') {
       const patientId = coveragesMatch[1];
-      const body = JSON.parse(config.data);
       const coverage: PatientCoverageRead = {
         id: uuid(),
         patient_id: patientId,
+        payer_id: body.payer_id ?? null,
+        health_plan_id: body.health_plan_id ?? null,
         payer_name: body.payer_name,
         plan_name: body.plan_name ?? null,
         member_number: body.member_number ?? null,
         authorization_required: body.authorization_required ?? false,
+        valid_from: body.valid_from ?? null,
+        valid_until: body.valid_until ?? null,
+        status: body.status ?? 'ACTIVE',
         created_at: now(),
       };
       db.coverages.push(coverage);
@@ -438,7 +154,6 @@ function setupMockAdapter() {
       return { data: db.facilities, status: 200, statusText: 'OK', headers: {}, config };
     }
     if (url === '/api/v1/facilities' && method === 'post') {
-      const body = JSON.parse(config.data);
       const facility: FacilityRead = {
         id: uuid(),
         name: body.name,
@@ -460,7 +175,6 @@ function setupMockAdapter() {
       return { data: db.rooms, status: 200, statusText: 'OK', headers: {}, config };
     }
     if (url === '/api/v1/rooms' && method === 'post') {
-      const body = JSON.parse(config.data);
       const room: RoomRead = {
         id: uuid(),
         facility_id: body.facility_id,
@@ -479,7 +193,6 @@ function setupMockAdapter() {
       if (!room) {
         return Promise.reject({ response: { status: 404, data: { detail: 'Habitación inexistente' } }, config });
       }
-      const body = JSON.parse(config.data);
       room.facility_id = body.facility_id;
       room.code = body.code;
       room.ward = body.ward;
@@ -509,7 +222,6 @@ function setupMockAdapter() {
       return { data: db.beds, status: 200, statusText: 'OK', headers: {}, config };
     }
     if (url === '/api/v1/beds' && method === 'post') {
-      const body = JSON.parse(config.data);
       const bed: BedRead = {
         id: uuid(),
         facility_id: body.facility_id,
@@ -526,7 +238,6 @@ function setupMockAdapter() {
     const updateBedMatch = url.match(/^\/api\/v1\/beds\/([^/]+)$/);
     if (updateBedMatch && method === 'put') {
       const bed = db.beds.find((item) => item.id === updateBedMatch[1]);
-      const body = JSON.parse(config.data);
       const room = db.rooms.find((item) => item.id === body.room_id);
       if (!bed || !room) {
         return Promise.reject({ response: { status: 404, data: { detail: 'Cama o habitación inexistente' } }, config });
@@ -542,7 +253,6 @@ function setupMockAdapter() {
     const bedRoomMatch = url.match(/^\/api\/v1\/beds\/([^/]+)\/room$/);
     if (bedRoomMatch && method === 'post') {
       const bed = db.beds.find((item) => item.id === bedRoomMatch[1]);
-      const body = JSON.parse(config.data);
       const room = db.rooms.find((item) => item.id === body.room_id);
       if (!bed || !room) {
         return Promise.reject({ response: { status: 404, data: { detail: 'Cama o habitación inexistente' } }, config });
@@ -554,41 +264,9 @@ function setupMockAdapter() {
       saveDB(db);
       return { data: bed, status: 200, statusText: 'OK', headers: {}, config };
     }
-    const bedStatusMatch = url.match(/^\/api\/v1\/beds\/([^/]+)\/status$/);
-    if (bedStatusMatch && method === 'post') {
-      const bed = db.beds.find((item) => item.id === bedStatusMatch[1]);
-      if (!bed) {
-        return Promise.reject({ response: { status: 404, data: { detail: 'Cama inexistente' } }, config });
-      }
-      const body = JSON.parse(config.data);
-      if (body.status === 'OCCUPIED') {
-        return Promise.reject({ response: { status: 409, data: { detail: 'La ocupación se crea desde una internación' } }, config });
-      }
-      bed.status = body.status;
-      if (body.status === 'AVAILABLE') {
-        bed.patient = null;
-      }
-      saveDB(db);
-      return { data: null, status: 200, statusText: 'OK', headers: {}, config };
-    }
-
     // Hospitalizations
     if (url === '/api/v1/hospitalizations' && method === 'get') {
       return { data: db.hospitalizations, status: 200, statusText: 'OK', headers: {}, config };
-    }
-    if (url === '/api/v1/hospitalizations' && method === 'post') {
-      const body = JSON.parse(config.data);
-      const hosp: HospitalizationRead = {
-        id: uuid(),
-        patient_id: body.patient_id,
-        status: 'PENDING_BED' as HospitalizationStatus,
-        admission_reason: body.admission_reason,
-        admitted_at: null,
-        discharged_at: null,
-      };
-      db.hospitalizations.push(hosp);
-      saveDB(db);
-      return { data: hosp, status: 201, statusText: 'Created', headers: {}, config };
     }
     const hospitalizationBedAssignmentsMatch = url.match(
       /^\/api\/v1\/hospitalizations\/([^/]+)\/bed-assignments$/,
@@ -608,8 +286,15 @@ function setupMockAdapter() {
 
     // Admissions
     if (url === '/api/v1/admissions' && method === 'get') {
+      const params = config.params ?? {};
+      const matches = db.admissions.filter(
+        (admission) =>
+          (!params.hospitalization_id ||
+            admission.hospitalization_id === params.hospitalization_id) &&
+          (!params.patient_id || admission.patient_id === params.patient_id),
+      );
       return {
-        data: db.admissions.map((admission) => admissionWithEffectiveStatus(admission, db)),
+        data: matches.map((admission) => admissionWithEffectiveStatus(admission, db)),
         status: 200,
         statusText: 'OK',
         headers: {},
@@ -617,7 +302,6 @@ function setupMockAdapter() {
       };
     }
     if (url === '/api/v1/admissions' && method === 'post') {
-      const body = JSON.parse(config.data);
       const patient = db.patients.find((p) => p.id === body.patient_id);
       if (!patient) {
         return Promise.reject({ response: { status: 404, data: { detail: 'Paciente inexistente' } }, config });
@@ -627,9 +311,14 @@ function setupMockAdapter() {
             id: uuid(),
             patient_id: patient.id,
             payer_name: body.coverage.payer_name,
+            payer_id: body.coverage.payer_id ?? null,
+            health_plan_id: body.coverage.health_plan_id ?? null,
             plan_name: body.coverage.plan_name ?? null,
             member_number: body.coverage.member_number ?? null,
             authorization_required: body.coverage.authorization_required ?? false,
+            valid_from: body.coverage.valid_from ?? null,
+            valid_until: body.coverage.valid_until ?? null,
+            status: body.coverage.status ?? 'ACTIVE',
             created_at: now(),
           }
         : null;
@@ -637,12 +326,34 @@ function setupMockAdapter() {
       const hospitalization: HospitalizationRead = {
         id: uuid(),
         patient_id: patient.id,
+        episode_id: null,
+        facility_id: body.facility_id ?? null,
+        admission_type: body.admission_type ?? null,
         status: body.requested_bed_id ? 'IN_PROGRESS' : 'PENDING_BED',
         admission_reason: body.admission_reason,
         admitted_at: body.requested_bed_id ? now() : null,
-        discharged_at: null,
+        clinically_discharged_at: null,
+        physically_departed_at: null,
+        administratively_discharged_at: null,
+        closed_at: null,
       };
       db.hospitalizations.push(hospitalization);
+      db.careTeams.push({ id: uuid(), hospitalization_id: hospitalization.id, members: [] });
+      if (body.requesting_service_id) {
+        db.serviceAssignments.push({
+          id: uuid(),
+          hospitalization_id: hospitalization.id,
+          service_id: body.requesting_service_id,
+          started_at: now(),
+          ended_at: null,
+          reason: 'Servicio responsable inicial',
+          assigned_by: null,
+        });
+      }
+      recordEvent(db, 'HOSPITALIZATION_CREATED', {
+        hospitalization_id: hospitalization.id,
+        patient_id: patient.id,
+      });
       const admission: AdmissionDashboardRead = {
         id: uuid(),
         patient_id: patient.id,
@@ -651,6 +362,7 @@ function setupMockAdapter() {
         episode: {
           id: uuid(),
           patient_id: patient.id,
+          facility_id: body.facility_id ?? null,
           episode_number: `EPI-${Date.now()}`,
           status: 'OPEN',
           reason: body.admission_reason,
@@ -660,6 +372,7 @@ function setupMockAdapter() {
         hospitalization_id: hospitalization.id,
         coverage_id: coverage?.id ?? body.coverage_id ?? null,
         coverage: coverage ?? null,
+        facility_id: body.facility_id ?? null,
         requesting_service_id: body.requesting_service_id ?? null,
         requested_bed_id: body.requested_bed_id ?? null,
         origin: body.origin,
@@ -674,8 +387,10 @@ function setupMockAdapter() {
         responsible_contact_relationship: body.responsible_contact_relationship ?? null,
         admission_reason: body.admission_reason,
         responsible_physician: body.responsible_physician,
+        responsible_physician_id: body.responsible_physician_id ?? null,
         presumptive_diagnosis: body.presumptive_diagnosis ?? null,
         notes: body.notes ?? null,
+        requested_at: now(),
         admitted_at: body.requested_bed_id ? now() : null,
         administrative_discharged_at: null,
         created_at: now(),
@@ -701,6 +416,33 @@ function setupMockAdapter() {
         }
       }
       db.admissions.unshift(admission);
+      if (body.authorization_status && body.authorization_status !== 'NOT_REQUIRED') {
+        // ``authorizations`` is the source of truth from the first moment.
+        db.authorizations.push({
+          id: uuid(),
+          patient_id: patient.id,
+          admission_id: admission.id,
+          hospitalization_id: hospitalization.id,
+          patient_coverage_id: coverage?.id ?? body.coverage_id ?? null,
+          authorization_type: 'ADMISSION',
+          authorization_number: body.authorization_number ?? null,
+          status: body.authorization_status === 'AUTHORIZED' ? 'AUTHORIZED' : 'PENDING',
+          requested_at: now(),
+          requested_by: null,
+          resolved_at: body.authorization_status === 'AUTHORIZED' ? now() : null,
+          authorized_at: body.authorization_status === 'AUTHORIZED' ? now() : null,
+          valid_from: null,
+          valid_until: null,
+          notes: 'Registrada junto con la solicitud de admision',
+          created_at: now(),
+        });
+      }
+      recordEvent(db, 'ADMISSION_REQUESTED', {
+        hospitalization_id: hospitalization.id,
+        admission_id: admission.id,
+        patient_id: patient.id,
+      });
+
       saveDB(db);
       return { data: toAdmissionRead(admission), status: 201, statusText: 'Created', headers: {}, config };
     }
@@ -722,19 +464,48 @@ function setupMockAdapter() {
     );
     if (assignMatch && method === 'post') {
       const hospId = assignMatch[1];
-      const body = JSON.parse(config.data);
       const bed = db.beds.find((b) => b.id === body.bed_id);
       if (!bed) {
-        return Promise.reject({ response: { status: 422, data: { detail: 'Bed not found' } }, config });
+        return Promise.reject({ response: { status: 404, data: { detail: 'Cama inexistente' } }, config });
       }
-      bed.status = 'OCCUPIED' as BedStatus;
+      const reservation = completeReservationForBed(db, bed.id, hospId);
+      if (reservation && reservation.status === 'ACTIVE') {
+        return Promise.reject({
+          response: { status: 409, data: { detail: 'La cama está reservada para otra internación' } },
+          config,
+        });
+      }
+      if (bed.status !== 'AVAILABLE' && !reservation) {
+        return Promise.reject({
+          response: { status: 409, data: { detail: 'La cama no está disponible' } },
+          config,
+        });
+      }
+      if (db.bedAssignments.some((item) => item.bed_id === bed.id && item.ended_at === null)) {
+        return Promise.reject({
+          response: { status: 409, data: { detail: 'La cama no está disponible' } },
+          config,
+        });
+      }
       const hosp = db.hospitalizations.find((h) => h.id === hospId);
-      if (hosp) {
-        hosp.status = 'IN_PROGRESS' as HospitalizationStatus;
-        hosp.admitted_at = now();
-        const patient = db.patients.find((p) => p.id === hosp.patient_id);
-        bed.patient = patient ?? null;
+      if (!hosp) {
+        return Promise.reject({ response: { status: 404, data: { detail: 'Internación inexistente' } }, config });
       }
+      if (db.bedAssignments.some((item) => item.hospitalization_id === hospId && item.ended_at === null)) {
+        return Promise.reject({
+          response: { status: 409, data: { detail: 'La internación ya tiene una cama activa' } },
+          config,
+        });
+      }
+      recordBedStatus(db, bed, 'OCCUPIED' as BedStatus, null, body.assignment_reason ?? null);
+      hosp.status = 'IN_PROGRESS' as HospitalizationStatus;
+      hosp.admitted_at = hosp.admitted_at ?? now();
+      bed.patient = db.patients.find((p) => p.id === hosp.patient_id) ?? null;
+      recordEvent(db, 'BED_ASSIGNED', {
+        hospitalization_id: hospId,
+        bed_id: bed.id,
+        patient_id: hosp.patient_id,
+      });
       const admission = db.admissions.find((item) => item.hospitalization_id === hospId);
       if (
         admission &&
@@ -748,7 +519,6 @@ function setupMockAdapter() {
         id: uuid(),
         hospitalization_id: hospId,
         bed_id: body.bed_id,
-        status: 'OCCUPIED' as BedStatus,
         started_at: now(),
         ended_at: null,
       };
@@ -767,16 +537,24 @@ function setupMockAdapter() {
         (a) => a.hospitalization_id === hospId && a.ended_at === null,
       );
       if (assignment) {
-        assignment.ended_at = now();
+        const at = now();
+        assignment.ended_at = at;
         const bed = db.beds.find((b) => b.id === assignment.bed_id);
         if (bed) {
-          bed.status = 'PENDING_CLEANING' as BedStatus;
-          bed.patient = null;
+          recordBedStatus(db, bed, 'PENDING_CLEANING' as BedStatus, null, 'Liberacion de cama');
+          recordEvent(db, 'BED_RELEASED', { hospitalization_id: hospId, bed_id: bed.id });
         }
         const hosp = db.hospitalizations.find((h) => h.id === hospId);
         if (hosp) {
           hosp.status = 'CLINICALLY_DISCHARGED' as HospitalizationStatus;
-          hosp.discharged_at = now();
+          hosp.clinically_discharged_at = hosp.clinically_discharged_at ?? at;
+          hosp.physically_departed_at = at;
+          recordEvent(db, 'CLINICAL_DISCHARGE_COMPLETED', { hospitalization_id: hospId });
+          recordEvent(db, 'PATIENT_PHYSICALLY_DEPARTED', {
+            hospitalization_id: hospId,
+            bed_id: assignment.bed_id,
+            patient_id: hosp.patient_id,
+          });
         }
         saveDB(db);
         return { data: assignment, status: 200, statusText: 'OK', headers: {}, config };

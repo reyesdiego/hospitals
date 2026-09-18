@@ -5,6 +5,9 @@
  * OpenAPI spec version: 0.1.0
  */
 
+/**
+ * Summary of the authorization requirement of an admission request.
+ */
 export type AuthorizationStatus = typeof AuthorizationStatus[keyof typeof AuthorizationStatus];
 
 

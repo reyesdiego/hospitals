@@ -8,6 +8,6 @@ import type { BedStatus } from './bedStatus';
 
 export interface BedStatusCreate {
   status: BedStatus;
-  started_at?: string | null;
-  ended_at?: string | null;
+  changed_by?: string | null;
+  reason?: string | null;
 }
