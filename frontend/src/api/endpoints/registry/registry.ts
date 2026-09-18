@@ -6,16 +6,27 @@
  */
 import type {
   HealthPlanCreate,
+  HealthPlanPracticeBulkCreate,
+  HealthPlanPracticeBulkRead,
+  HealthPlanPracticeCreate,
+  HealthPlanPracticeRead,
+  HealthPlanPracticeUpdate,
   HealthPlanRead,
+  HealthPlanUpdate,
+  ListHealthPlanPracticesApiV1HealthPlansHealthPlanIdPracticesGetParams,
+  ListHealthPlansApiV1HealthPlansGetParams,
+  ListPayersApiV1PayersGetParams,
   PatientContactCreate,
   PatientContactRead,
   PatientCoverageCreate,
   PatientCoverageRead,
+  PatientCoverageUpdate,
   PatientIdentifierCreate,
   PatientIdentifierRead,
   PatientMatchRead,
   PayerCreate,
   PayerRead,
+  PayerUpdate,
   SearchPatientsApiV1PatientsSearchGetParams
 } from '../../model';
 
@@ -90,13 +101,15 @@ const createPatientContactApiV1PatientsPatientIdContactsPost = (
       options);
     }
   /**
+ * Catálogo de financiadores. ``search`` busca por nombre o código.
  * @summary List Payers
  */
 const listPayersApiV1PayersGet = (
-
+    params?: ListPayersApiV1PayersGetParams,
  options?: SecondParameter<typeof customInstance<PayerRead[]>>,) => {
       return customInstance<PayerRead[]>(
-      {url: `/api/v1/payers`, method: 'GET'
+      {url: `/api/v1/payers`, method: 'GET',
+        params
     },
       options);
     }
@@ -114,9 +127,45 @@ const createPayerApiV1PayersPost = (
       options);
     }
   /**
- * @summary List Health Plans
+ * @summary Get Payer
  */
-const listHealthPlansApiV1PayersPayerIdHealthPlansGet = (
+const getPayerApiV1PayersPayerIdGet = (
+    payerId: string,
+ options?: SecondParameter<typeof customInstance<PayerRead>>,) => {
+      return customInstance<PayerRead>(
+      {url: `/api/v1/payers/${payerId}`, method: 'GET'
+    },
+      options);
+    }
+  /**
+ * @summary Update Payer
+ */
+const updatePayerApiV1PayersPayerIdPut = (
+    payerId: string,
+    payerUpdate: PayerUpdate,
+ options?: SecondParameter<typeof customInstance<PayerRead>>,) => {
+      return customInstance<PayerRead>(
+      {url: `/api/v1/payers/${payerId}`, method: 'PUT',
+      headers: {'Content-Type': 'application/json', },
+      data: payerUpdate
+    },
+      options);
+    }
+  /**
+ * @summary Delete Payer
+ */
+const deletePayerApiV1PayersPayerIdDelete = (
+    payerId: string,
+ options?: SecondParameter<typeof customInstance<void>>,) => {
+      return customInstance<void>(
+      {url: `/api/v1/payers/${payerId}`, method: 'DELETE'
+    },
+      options);
+    }
+  /**
+ * @summary List Payer Health Plans
+ */
+const listPayerHealthPlansApiV1PayersPayerIdHealthPlansGet = (
     payerId: string,
  options?: SecondParameter<typeof customInstance<HealthPlanRead[]>>,) => {
       return customInstance<HealthPlanRead[]>(
@@ -135,6 +184,127 @@ const createHealthPlanApiV1PayersPayerIdHealthPlansPost = (
       {url: `/api/v1/payers/${payerId}/health-plans`, method: 'POST',
       headers: {'Content-Type': 'application/json', },
       data: healthPlanCreate
+    },
+      options);
+    }
+  /**
+ * @summary List Health Plans
+ */
+const listHealthPlansApiV1HealthPlansGet = (
+    params?: ListHealthPlansApiV1HealthPlansGetParams,
+ options?: SecondParameter<typeof customInstance<HealthPlanRead[]>>,) => {
+      return customInstance<HealthPlanRead[]>(
+      {url: `/api/v1/health-plans`, method: 'GET',
+        params
+    },
+      options);
+    }
+  /**
+ * @summary Get Health Plan
+ */
+const getHealthPlanApiV1HealthPlansHealthPlanIdGet = (
+    healthPlanId: string,
+ options?: SecondParameter<typeof customInstance<HealthPlanRead>>,) => {
+      return customInstance<HealthPlanRead>(
+      {url: `/api/v1/health-plans/${healthPlanId}`, method: 'GET'
+    },
+      options);
+    }
+  /**
+ * @summary Update Health Plan
+ */
+const updateHealthPlanApiV1HealthPlansHealthPlanIdPut = (
+    healthPlanId: string,
+    healthPlanUpdate: HealthPlanUpdate,
+ options?: SecondParameter<typeof customInstance<HealthPlanRead>>,) => {
+      return customInstance<HealthPlanRead>(
+      {url: `/api/v1/health-plans/${healthPlanId}`, method: 'PUT',
+      headers: {'Content-Type': 'application/json', },
+      data: healthPlanUpdate
+    },
+      options);
+    }
+  /**
+ * @summary Delete Health Plan
+ */
+const deleteHealthPlanApiV1HealthPlansHealthPlanIdDelete = (
+    healthPlanId: string,
+ options?: SecondParameter<typeof customInstance<void>>,) => {
+      return customInstance<void>(
+      {url: `/api/v1/health-plans/${healthPlanId}`, method: 'DELETE'
+    },
+      options);
+    }
+  /**
+ * Cartilla del plan: las prácticas que tiene cargadas y en qué condiciones.
+ * @summary List Health Plan Practices
+ */
+const listHealthPlanPracticesApiV1HealthPlansHealthPlanIdPracticesGet = (
+    healthPlanId: string,
+    params?: ListHealthPlanPracticesApiV1HealthPlansHealthPlanIdPracticesGetParams,
+ options?: SecondParameter<typeof customInstance<HealthPlanPracticeRead[]>>,) => {
+      return customInstance<HealthPlanPracticeRead[]>(
+      {url: `/api/v1/health-plans/${healthPlanId}/practices`, method: 'GET',
+        params
+    },
+      options);
+    }
+  /**
+ * @summary Link Health Plan Practice
+ */
+const linkHealthPlanPracticeApiV1HealthPlansHealthPlanIdPracticesPost = (
+    healthPlanId: string,
+    healthPlanPracticeCreate: HealthPlanPracticeCreate,
+ options?: SecondParameter<typeof customInstance<HealthPlanPracticeRead>>,) => {
+      return customInstance<HealthPlanPracticeRead>(
+      {url: `/api/v1/health-plans/${healthPlanId}/practices`, method: 'POST',
+      headers: {'Content-Type': 'application/json', },
+      data: healthPlanPracticeCreate
+    },
+      options);
+    }
+  /**
+ * Alta masiva. Las que ya estaban en la cartilla se devuelven como omitidas: sus
+ * condiciones no se pisan.
+ * @summary Link Health Plan Practices
+ */
+const linkHealthPlanPracticesApiV1HealthPlansHealthPlanIdPracticesBulkPost = (
+    healthPlanId: string,
+    healthPlanPracticeBulkCreate: HealthPlanPracticeBulkCreate,
+ options?: SecondParameter<typeof customInstance<HealthPlanPracticeBulkRead>>,) => {
+      return customInstance<HealthPlanPracticeBulkRead>(
+      {url: `/api/v1/health-plans/${healthPlanId}/practices/bulk`, method: 'POST',
+      headers: {'Content-Type': 'application/json', },
+      data: healthPlanPracticeBulkCreate
+    },
+      options);
+    }
+  /**
+ * @summary Update Health Plan Practice
+ */
+const updateHealthPlanPracticeApiV1HealthPlansHealthPlanIdPracticesPlanPracticeIdPut = (
+    healthPlanId: string,
+    planPracticeId: string,
+    healthPlanPracticeUpdate: HealthPlanPracticeUpdate,
+ options?: SecondParameter<typeof customInstance<HealthPlanPracticeRead>>,) => {
+      return customInstance<HealthPlanPracticeRead>(
+      {url: `/api/v1/health-plans/${healthPlanId}/practices/${planPracticeId}`, method: 'PUT',
+      headers: {'Content-Type': 'application/json', },
+      data: healthPlanPracticeUpdate
+    },
+      options);
+    }
+  /**
+ * Saca la práctica de la cartilla. Para dejar asentado que el plan no la cubre, marcarla
+ * como no cubierta en lugar de borrarla.
+ * @summary Unlink Health Plan Practice
+ */
+const unlinkHealthPlanPracticeApiV1HealthPlansHealthPlanIdPracticesPlanPracticeIdDelete = (
+    healthPlanId: string,
+    planPracticeId: string,
+ options?: SecondParameter<typeof customInstance<void>>,) => {
+      return customInstance<void>(
+      {url: `/api/v1/health-plans/${healthPlanId}/practices/${planPracticeId}`, method: 'DELETE'
     },
       options);
     }
@@ -163,7 +333,45 @@ const createPatientCoverageApiV1PatientsPatientIdCoveragesPost = (
     },
       options);
     }
-  return {searchPatientsApiV1PatientsSearchGet,listPatientIdentifiersApiV1PatientsPatientIdIdentifiersGet,createPatientIdentifierApiV1PatientsPatientIdIdentifiersPost,listPatientContactsApiV1PatientsPatientIdContactsGet,createPatientContactApiV1PatientsPatientIdContactsPost,listPayersApiV1PayersGet,createPayerApiV1PayersPost,listHealthPlansApiV1PayersPayerIdHealthPlansGet,createHealthPlanApiV1PayersPayerIdHealthPlansPost,listPatientCoveragesApiV1PatientsPatientIdCoveragesGet,createPatientCoverageApiV1PatientsPatientIdCoveragesPost}};
+  /**
+ * @summary Get Coverage
+ */
+const getCoverageApiV1CoveragesCoverageIdGet = (
+    coverageId: string,
+ options?: SecondParameter<typeof customInstance<PatientCoverageRead>>,) => {
+      return customInstance<PatientCoverageRead>(
+      {url: `/api/v1/coverages/${coverageId}`, method: 'GET'
+    },
+      options);
+    }
+  /**
+ * @summary Update Coverage
+ */
+const updateCoverageApiV1CoveragesCoverageIdPut = (
+    coverageId: string,
+    patientCoverageUpdate: PatientCoverageUpdate,
+ options?: SecondParameter<typeof customInstance<PatientCoverageRead>>,) => {
+      return customInstance<PatientCoverageRead>(
+      {url: `/api/v1/coverages/${coverageId}`, method: 'PUT',
+      headers: {'Content-Type': 'application/json', },
+      data: patientCoverageUpdate
+    },
+      options);
+    }
+  /**
+ * Elimina una cobertura no utilizada; si ya tiene admisiones o cuentas, désela de baja
+ * cambiando su ``status`` a ``INACTIVE``.
+ * @summary Delete Coverage
+ */
+const deleteCoverageApiV1CoveragesCoverageIdDelete = (
+    coverageId: string,
+ options?: SecondParameter<typeof customInstance<void>>,) => {
+      return customInstance<void>(
+      {url: `/api/v1/coverages/${coverageId}`, method: 'DELETE'
+    },
+      options);
+    }
+  return {searchPatientsApiV1PatientsSearchGet,listPatientIdentifiersApiV1PatientsPatientIdIdentifiersGet,createPatientIdentifierApiV1PatientsPatientIdIdentifiersPost,listPatientContactsApiV1PatientsPatientIdContactsGet,createPatientContactApiV1PatientsPatientIdContactsPost,listPayersApiV1PayersGet,createPayerApiV1PayersPost,getPayerApiV1PayersPayerIdGet,updatePayerApiV1PayersPayerIdPut,deletePayerApiV1PayersPayerIdDelete,listPayerHealthPlansApiV1PayersPayerIdHealthPlansGet,createHealthPlanApiV1PayersPayerIdHealthPlansPost,listHealthPlansApiV1HealthPlansGet,getHealthPlanApiV1HealthPlansHealthPlanIdGet,updateHealthPlanApiV1HealthPlansHealthPlanIdPut,deleteHealthPlanApiV1HealthPlansHealthPlanIdDelete,listHealthPlanPracticesApiV1HealthPlansHealthPlanIdPracticesGet,linkHealthPlanPracticeApiV1HealthPlansHealthPlanIdPracticesPost,linkHealthPlanPracticesApiV1HealthPlansHealthPlanIdPracticesBulkPost,updateHealthPlanPracticeApiV1HealthPlansHealthPlanIdPracticesPlanPracticeIdPut,unlinkHealthPlanPracticeApiV1HealthPlansHealthPlanIdPracticesPlanPracticeIdDelete,listPatientCoveragesApiV1PatientsPatientIdCoveragesGet,createPatientCoverageApiV1PatientsPatientIdCoveragesPost,getCoverageApiV1CoveragesCoverageIdGet,updateCoverageApiV1CoveragesCoverageIdPut,deleteCoverageApiV1CoveragesCoverageIdDelete}};
 export type SearchPatientsApiV1PatientsSearchGetResult = NonNullable<Awaited<ReturnType<ReturnType<typeof getRegistry>['searchPatientsApiV1PatientsSearchGet']>>>
 export type ListPatientIdentifiersApiV1PatientsPatientIdIdentifiersGetResult = NonNullable<Awaited<ReturnType<ReturnType<typeof getRegistry>['listPatientIdentifiersApiV1PatientsPatientIdIdentifiersGet']>>>
 export type CreatePatientIdentifierApiV1PatientsPatientIdIdentifiersPostResult = NonNullable<Awaited<ReturnType<ReturnType<typeof getRegistry>['createPatientIdentifierApiV1PatientsPatientIdIdentifiersPost']>>>
@@ -171,7 +379,22 @@ export type ListPatientContactsApiV1PatientsPatientIdContactsGetResult = NonNull
 export type CreatePatientContactApiV1PatientsPatientIdContactsPostResult = NonNullable<Awaited<ReturnType<ReturnType<typeof getRegistry>['createPatientContactApiV1PatientsPatientIdContactsPost']>>>
 export type ListPayersApiV1PayersGetResult = NonNullable<Awaited<ReturnType<ReturnType<typeof getRegistry>['listPayersApiV1PayersGet']>>>
 export type CreatePayerApiV1PayersPostResult = NonNullable<Awaited<ReturnType<ReturnType<typeof getRegistry>['createPayerApiV1PayersPost']>>>
-export type ListHealthPlansApiV1PayersPayerIdHealthPlansGetResult = NonNullable<Awaited<ReturnType<ReturnType<typeof getRegistry>['listHealthPlansApiV1PayersPayerIdHealthPlansGet']>>>
+export type GetPayerApiV1PayersPayerIdGetResult = NonNullable<Awaited<ReturnType<ReturnType<typeof getRegistry>['getPayerApiV1PayersPayerIdGet']>>>
+export type UpdatePayerApiV1PayersPayerIdPutResult = NonNullable<Awaited<ReturnType<ReturnType<typeof getRegistry>['updatePayerApiV1PayersPayerIdPut']>>>
+export type DeletePayerApiV1PayersPayerIdDeleteResult = NonNullable<Awaited<ReturnType<ReturnType<typeof getRegistry>['deletePayerApiV1PayersPayerIdDelete']>>>
+export type ListPayerHealthPlansApiV1PayersPayerIdHealthPlansGetResult = NonNullable<Awaited<ReturnType<ReturnType<typeof getRegistry>['listPayerHealthPlansApiV1PayersPayerIdHealthPlansGet']>>>
 export type CreateHealthPlanApiV1PayersPayerIdHealthPlansPostResult = NonNullable<Awaited<ReturnType<ReturnType<typeof getRegistry>['createHealthPlanApiV1PayersPayerIdHealthPlansPost']>>>
+export type ListHealthPlansApiV1HealthPlansGetResult = NonNullable<Awaited<ReturnType<ReturnType<typeof getRegistry>['listHealthPlansApiV1HealthPlansGet']>>>
+export type GetHealthPlanApiV1HealthPlansHealthPlanIdGetResult = NonNullable<Awaited<ReturnType<ReturnType<typeof getRegistry>['getHealthPlanApiV1HealthPlansHealthPlanIdGet']>>>
+export type UpdateHealthPlanApiV1HealthPlansHealthPlanIdPutResult = NonNullable<Awaited<ReturnType<ReturnType<typeof getRegistry>['updateHealthPlanApiV1HealthPlansHealthPlanIdPut']>>>
+export type DeleteHealthPlanApiV1HealthPlansHealthPlanIdDeleteResult = NonNullable<Awaited<ReturnType<ReturnType<typeof getRegistry>['deleteHealthPlanApiV1HealthPlansHealthPlanIdDelete']>>>
+export type ListHealthPlanPracticesApiV1HealthPlansHealthPlanIdPracticesGetResult = NonNullable<Awaited<ReturnType<ReturnType<typeof getRegistry>['listHealthPlanPracticesApiV1HealthPlansHealthPlanIdPracticesGet']>>>
+export type LinkHealthPlanPracticeApiV1HealthPlansHealthPlanIdPracticesPostResult = NonNullable<Awaited<ReturnType<ReturnType<typeof getRegistry>['linkHealthPlanPracticeApiV1HealthPlansHealthPlanIdPracticesPost']>>>
+export type LinkHealthPlanPracticesApiV1HealthPlansHealthPlanIdPracticesBulkPostResult = NonNullable<Awaited<ReturnType<ReturnType<typeof getRegistry>['linkHealthPlanPracticesApiV1HealthPlansHealthPlanIdPracticesBulkPost']>>>
+export type UpdateHealthPlanPracticeApiV1HealthPlansHealthPlanIdPracticesPlanPracticeIdPutResult = NonNullable<Awaited<ReturnType<ReturnType<typeof getRegistry>['updateHealthPlanPracticeApiV1HealthPlansHealthPlanIdPracticesPlanPracticeIdPut']>>>
+export type UnlinkHealthPlanPracticeApiV1HealthPlansHealthPlanIdPracticesPlanPracticeIdDeleteResult = NonNullable<Awaited<ReturnType<ReturnType<typeof getRegistry>['unlinkHealthPlanPracticeApiV1HealthPlansHealthPlanIdPracticesPlanPracticeIdDelete']>>>
 export type ListPatientCoveragesApiV1PatientsPatientIdCoveragesGetResult = NonNullable<Awaited<ReturnType<ReturnType<typeof getRegistry>['listPatientCoveragesApiV1PatientsPatientIdCoveragesGet']>>>
 export type CreatePatientCoverageApiV1PatientsPatientIdCoveragesPostResult = NonNullable<Awaited<ReturnType<ReturnType<typeof getRegistry>['createPatientCoverageApiV1PatientsPatientIdCoveragesPost']>>>
+export type GetCoverageApiV1CoveragesCoverageIdGetResult = NonNullable<Awaited<ReturnType<ReturnType<typeof getRegistry>['getCoverageApiV1CoveragesCoverageIdGet']>>>
+export type UpdateCoverageApiV1CoveragesCoverageIdPutResult = NonNullable<Awaited<ReturnType<ReturnType<typeof getRegistry>['updateCoverageApiV1CoveragesCoverageIdPut']>>>
+export type DeleteCoverageApiV1CoveragesCoverageIdDeleteResult = NonNullable<Awaited<ReturnType<ReturnType<typeof getRegistry>['deleteCoverageApiV1CoveragesCoverageIdDelete']>>>

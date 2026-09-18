@@ -11,4 +11,7 @@ export interface HospitalizationPracticePerformCreate {
   unit_price?: number | string | null;
   recorded_by?: string | null;
   notes?: string | null;
+  authorization_number?: string | null;
+  override_coverage_rules?: boolean;
+  override_reason?: string | null;
 }

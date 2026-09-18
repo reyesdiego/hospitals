@@ -107,6 +107,10 @@ def read_catalog(path: Path = CATALOG_PATH) -> list[dict]:
                 entry[field] = units
             for field in FLAGS:
                 entry[field] = (raw[field] or "").strip().lower() == "true"
+            waiting = (raw.get("default_waiting_period_days") or "0").strip() or "0"
+            if not waiting.isdigit():
+                raise ValueError(f"{path.name}:{line}: la carencia debe ser un número de días")
+            entry["default_waiting_period_days"] = int(waiting)
 
             identity = (entry["nomenclador"], entry["code"])
             if identity in seen:

@@ -41,6 +41,7 @@ type PracticeForm = {
   radiology_units: string;
   requires_authorization: boolean;
   requires_consent: boolean;
+  default_waiting_period_days: string;
   is_active: boolean;
   valid_from: string;
   valid_until: string;
@@ -62,6 +63,7 @@ const emptyForm: PracticeForm = {
   radiology_units: '0',
   requires_authorization: false,
   requires_consent: false,
+  default_waiting_period_days: '0',
   is_active: true,
   valid_from: '',
   valid_until: '',
@@ -85,6 +87,7 @@ function toPayload(form: PracticeForm): MedicalPracticeCreate {
     radiology_units: unit(form.radiology_units),
     requires_authorization: form.requires_authorization,
     requires_consent: form.requires_consent,
+    default_waiting_period_days: Number(form.default_waiting_period_days || 0),
     is_active: form.is_active,
     valid_from: form.valid_from || null,
     valid_until: form.valid_until || null,
@@ -108,6 +111,7 @@ function toForm(practice: MedicalPracticeRead): PracticeForm {
     radiology_units: practice.radiology_units,
     requires_authorization: practice.requires_authorization,
     requires_consent: practice.requires_consent,
+    default_waiting_period_days: String(practice.default_waiting_period_days),
     is_active: practice.is_active,
     valid_from: practice.valid_from ?? '',
     valid_until: practice.valid_until ?? '',
@@ -381,6 +385,11 @@ export default function MedicalPracticesPage() {
                               Consentimiento
                             </span>
                           )}
+                          {practice.default_waiting_period_days > 0 && (
+                            <span className="rounded-md bg-slate-100 px-2 py-0.5 text-xs font-medium text-slate-600">
+                              Carencia {practice.default_waiting_period_days} dias
+                            </span>
+                          )}
                           {!practice.requires_authorization && !practice.requires_consent && (
                             <span className="text-xs text-slate-400">Sin requisitos</span>
                           )}
@@ -560,6 +569,22 @@ export default function MedicalPracticesPage() {
               onChange={(event) => setForm({ ...form, description: event.target.value })}
               className={inputClass}
             />
+          </Field>
+
+          <Field label="Carencia por defecto (dias)">
+            <input
+              type="number"
+              min={0}
+              max={3650}
+              value={form.default_waiting_period_days}
+              onChange={(event) =>
+                setForm({ ...form, default_waiting_period_days: event.target.value })
+              }
+              className={inputClass}
+            />
+            <p className="mt-1 text-xs text-slate-400">
+              Rige en todos los planes, salvo que un plan pacte otra en su cartilla.
+            </p>
           </Field>
 
           <Field label="Observaciones">

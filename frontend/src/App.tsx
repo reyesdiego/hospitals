@@ -12,6 +12,8 @@ import RoomsPage from '@/pages/RoomsPage';
 import FacilitiesPage from '@/pages/FacilitiesPage';
 import ServicesPage from '@/pages/ServicesPage';
 import MedicalPracticesPage from '@/pages/MedicalPracticesPage';
+import CoveragesPage from '@/pages/CoveragesPage';
+import PlanPracticesPage from '@/pages/PlanPracticesPage';
 import HospitalizationsPage from '@/pages/HospitalizationsPage';
 import HospitalizationDetailPage from '@/pages/HospitalizationDetailPage';
 import AdmissionPanelPage from '@/pages/AdmissionPanelPage';
@@ -64,6 +66,8 @@ function AppRoutes() {
         <Route path="/facilities" element={<FacilitiesPage />} />
         <Route path="/services" element={<ServicesPage />} />
         <Route path="/practices" element={<MedicalPracticesPage />} />
+        <Route path="/coverages" element={<CoveragesPage />} />
+        <Route path="/coverages/plans/:planId" element={<PlanPracticesPage />} />
         <Route path="/hospitalizations" element={<HospitalizationsPage />} />
         <Route path="/hospitalizations/:id" element={<HospitalizationDetailPage />} />
       </Route>

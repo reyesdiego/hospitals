@@ -18,6 +18,7 @@ import {
   Stethoscope,
   ClipboardCheck,
   ClipboardList,
+  ShieldPlus,
   type LucideIcon,
 } from 'lucide-react';
 
@@ -87,6 +88,12 @@ export const NAV_ITEMS: NavConfig[] = [
     label: 'Practicas medicas',
     path: '/practices',
     icon: ClipboardList,
+    roles: ['admin', 'receptionist'],
+  },
+  {
+    label: 'Coberturas',
+    path: '/coverages',
+    icon: ShieldPlus,
     roles: ['admin', 'receptionist'],
   },
 ];

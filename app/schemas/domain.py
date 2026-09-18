@@ -179,6 +179,20 @@ class PatientCoverageCreate(BaseModel):
     status: CoverageStatus = CoverageStatus.ACTIVE
 
 
+class PatientCoverageUpdate(BaseModel):
+    """The patient of a coverage is not editable; everything else is."""
+
+    payer_id: uuid.UUID | None = None
+    health_plan_id: uuid.UUID | None = None
+    payer_name: str | None = Field(default=None, max_length=150)
+    plan_name: str | None = Field(default=None, max_length=150)
+    member_number: str | None = Field(default=None, max_length=80)
+    authorization_required: bool = False
+    valid_from: date | None = None
+    valid_until: date | None = None
+    status: CoverageStatus = CoverageStatus.ACTIVE
+
+
 class PatientCoverageRead(ORMModel):
     id: uuid.UUID
     patient_id: uuid.UUID

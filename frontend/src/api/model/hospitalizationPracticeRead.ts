@@ -25,6 +25,11 @@ export interface HospitalizationPracticeRead {
   cancelled_at: string | null;
   indication: string | null;
   notes: string | null;
+  authorization_number: string | null;
+  /** @pattern ^(?!^[-+.]*$)[+-]?0*\d*\.?\d*$ */
+  copayment_amount: string;
+  copayment_charge_item_id: string | null;
+  coverage_override_reason: string | null;
   created_at: string;
   charge?: ChargeItemRead | null;
 }

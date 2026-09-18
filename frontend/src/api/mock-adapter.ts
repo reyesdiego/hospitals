@@ -9,6 +9,7 @@ import {
   uuid,
 } from './mock-db';
 import { handleAccountRequest } from './mock-account';
+import { coverageFields, handleCoverageRequest, isCoverageError } from './mock-coverage';
 import { handlePracticeRequest } from './mock-practices';
 import {
   completeReservationForBed,
@@ -25,7 +26,6 @@ import type {
   FacilityRead,
   HospitalizationRead,
   HospitalizationStatus,
-  PatientCoverageRead,
   PatientRead,
   RoomRead,
 } from './model';
@@ -43,6 +43,7 @@ function setupMockAdapter() {
     const body = config.data ? JSON.parse(config.data) : {};
 
     const catalog =
+      handleCoverageRequest(db, url, method, body, config.params ?? {}) ??
       handlePracticeRequest(db, url, method, body, config.params ?? {}) ??
       handleAccountRequest(db, url, method, body);
     const workflow = catalog ?? handleWorkflowRequest(db, url, method, body);
@@ -115,38 +116,6 @@ function setupMockAdapter() {
           p.document_number === params.document_number,
       );
       return { data: matches, status: 200, statusText: 'OK', headers: {}, config };
-    }
-
-    const coveragesMatch = url.match(/^\/api\/v1\/patients\/([^/]+)\/coverages$/);
-    if (coveragesMatch && method === 'get') {
-      const patientId = coveragesMatch[1];
-      return {
-        data: db.coverages.filter((c) => c.patient_id === patientId),
-        status: 200,
-        statusText: 'OK',
-        headers: {},
-        config,
-      };
-    }
-    if (coveragesMatch && method === 'post') {
-      const patientId = coveragesMatch[1];
-      const coverage: PatientCoverageRead = {
-        id: uuid(),
-        patient_id: patientId,
-        payer_id: body.payer_id ?? null,
-        health_plan_id: body.health_plan_id ?? null,
-        payer_name: body.payer_name,
-        plan_name: body.plan_name ?? null,
-        member_number: body.member_number ?? null,
-        authorization_required: body.authorization_required ?? false,
-        valid_from: body.valid_from ?? null,
-        valid_until: body.valid_until ?? null,
-        status: body.status ?? 'ACTIVE',
-        created_at: now(),
-      };
-      db.coverages.push(coverage);
-      saveDB(db);
-      return { data: coverage, status: 201, statusText: 'Created', headers: {}, config };
     }
 
     // Facilities
@@ -306,23 +275,35 @@ function setupMockAdapter() {
       if (!patient) {
         return Promise.reject({ response: { status: 404, data: { detail: 'Paciente inexistente' } }, config });
       }
-      const coverage = body.coverage
-        ? {
-            id: uuid(),
-            patient_id: patient.id,
-            payer_name: body.coverage.payer_name,
-            payer_id: body.coverage.payer_id ?? null,
-            health_plan_id: body.coverage.health_plan_id ?? null,
-            plan_name: body.coverage.plan_name ?? null,
-            member_number: body.coverage.member_number ?? null,
-            authorization_required: body.coverage.authorization_required ?? false,
-            valid_from: body.coverage.valid_from ?? null,
-            valid_until: body.coverage.valid_until ?? null,
-            status: body.coverage.status ?? 'ACTIVE',
-            created_at: now(),
-          }
+      if (body.coverage_id && body.coverage) {
+        return Promise.reject({
+          response: { status: 422, data: { detail: 'Informe coverage_id o coverage, no ambos' } },
+          config,
+        });
+      }
+      let coverage = body.coverage_id
+        ? db.coverages.find(
+            (item) => item.id === body.coverage_id && item.patient_id === patient.id,
+          ) ?? null
         : null;
-      if (coverage) db.coverages.push(coverage);
+      if (body.coverage_id && !coverage) {
+        return Promise.reject({
+          response: { status: 404, data: { detail: 'Cobertura inexistente para el paciente' } },
+          config,
+        });
+      }
+      if (body.coverage) {
+        // Same resolution as the API: the catalog fills the payer and plan names.
+        const fields = coverageFields(db, body.coverage);
+        if (isCoverageError(fields)) {
+          return Promise.reject({
+            response: { status: fields.status, data: { detail: fields.detail } },
+            config,
+          });
+        }
+        coverage = { id: uuid(), patient_id: patient.id, created_at: now(), ...fields };
+        db.coverages.push(coverage);
+      }
       const hospitalization: HospitalizationRead = {
         id: uuid(),
         patient_id: patient.id,

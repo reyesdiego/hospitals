@@ -45,10 +45,12 @@ from app.models.hospitalization import (
 )
 from app.models.patient import Patient, PatientContact, PatientIdentifier, PatientIdentifierType
 from app.models.practice import (
+    HealthPlanPractice,
     HospitalizationPractice,
     MedicalPractice,
     MedicalPracticeTariff,
     Nomenclador,
+    PlanCoverageStatus,
     PracticeChapter,
     PracticeOrderStatus,
     PracticeSetting,
@@ -94,6 +96,7 @@ __all__ = [
     "EpisodeStatus",
     "Facility",
     "HealthPlan",
+    "HealthPlanPractice",
     "Hospitalization",
     "HospitalizationEvent",
     "HospitalizationEventType",
@@ -109,6 +112,7 @@ __all__ = [
     "PatientIdentifier",
     "PatientIdentifierType",
     "Payer",
+    "PlanCoverageStatus",
     "PracticeChapter",
     "PracticeOrderStatus",
     "PracticeSetting",

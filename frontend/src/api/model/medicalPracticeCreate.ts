@@ -32,6 +32,11 @@ export interface MedicalPracticeCreate {
   radiology_units?: number | string;
   requires_authorization?: boolean;
   requires_consent?: boolean;
+  /**
+     * @minimum 0
+     * @maximum 3650
+     */
+  default_waiting_period_days?: number;
   is_active?: boolean;
   valid_from?: string | null;
   valid_until?: string | null;

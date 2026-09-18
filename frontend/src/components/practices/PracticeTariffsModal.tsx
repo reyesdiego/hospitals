@@ -111,7 +111,7 @@ export default function PracticeTariffsModal({
 
   const plansQuery = useQuery({
     queryKey: ['health-plans', form.payer_id],
-    queryFn: () => registry.listHealthPlansApiV1PayersPayerIdHealthPlansGet(form.payer_id),
+    queryFn: () => registry.listPayerHealthPlansApiV1PayersPayerIdHealthPlansGet(form.payer_id),
     enabled: open && form.payer_id !== '',
   });
 

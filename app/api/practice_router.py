@@ -19,6 +19,7 @@ from app.schemas.practice import (
     MedicalPracticeTariffRead,
     MedicalPracticeTariffUpdate,
     MedicalPracticeUpdate,
+    PlanCoverageCheckRead,
 )
 from app.services.practice import HospitalizationPracticeService, MedicalPracticeService
 
@@ -214,3 +215,31 @@ async def cancel_hospitalization_practice(
         payload,
     )
     return await hospitalization_practice_read(session, order)
+
+
+@router.get(
+    "/hospitalizations/{hospitalization_id}/practices/coverage-check",
+    response_model=PlanCoverageCheckRead,
+)
+async def check_practice_coverage(
+    hospitalization_id: uuid.UUID,
+    practice_id: uuid.UUID,
+    session: DbSession,
+    on: date | None = None,
+):
+    """Qué dice la cartilla del plan de la internación sobre una práctica: si la cubre, con
+    qué copago, si está en carencia y si el financiador exige autorización."""
+
+    check = await HospitalizationPracticeService(session).coverage_check(
+        hospitalization_id, practice_id, on=on
+    )
+    return PlanCoverageCheckRead(
+        status=check.status,
+        blocked=check.blocked,
+        copayment_amount=check.copayment_amount,
+        requires_authorization=check.requires_authorization,
+        waiting_period_days=check.waiting_period_days,
+        available_from=check.available_from,
+        health_plan_id=check.health_plan_id,
+        message=check.message,
+    )

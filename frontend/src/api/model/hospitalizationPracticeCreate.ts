@@ -24,4 +24,7 @@ export interface HospitalizationPracticeCreate {
   indication?: string | null;
   notes?: string | null;
   recorded_by?: string | null;
+  authorization_number?: string | null;
+  override_coverage_rules?: boolean;
+  override_reason?: string | null;
 }

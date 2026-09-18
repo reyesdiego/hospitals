@@ -5,6 +5,7 @@
  * OpenAPI spec version: 0.1.0
  */
 import type {
+  CheckPracticeCoverageApiV1HospitalizationsHospitalizationIdPracticesCoverageCheckGetParams,
   GetEffectivePracticeTariffApiV1PracticesPracticeIdTariffsEffectiveGetParams,
   HospitalizationPracticeCancelCreate,
   HospitalizationPracticeCreate,
@@ -17,7 +18,8 @@ import type {
   MedicalPracticeTariffCreate,
   MedicalPracticeTariffRead,
   MedicalPracticeTariffUpdate,
-  MedicalPracticeUpdate
+  MedicalPracticeUpdate,
+  PlanCoverageCheckRead
 } from '../../model';
 
 import { customInstance } from '../../custom-instance';
@@ -219,7 +221,22 @@ const cancelHospitalizationPracticeApiV1HospitalizationsHospitalizationIdPractic
     },
       options);
     }
-  return {listPracticesApiV1PracticesGet,createPracticeApiV1PracticesPost,getPracticeApiV1PracticesPracticeIdGet,updatePracticeApiV1PracticesPracticeIdPut,deletePracticeApiV1PracticesPracticeIdDelete,listPracticeTariffsApiV1PracticesPracticeIdTariffsGet,createPracticeTariffApiV1PracticesPracticeIdTariffsPost,getEffectivePracticeTariffApiV1PracticesPracticeIdTariffsEffectiveGet,updatePracticeTariffApiV1PracticesPracticeIdTariffsTariffIdPut,deletePracticeTariffApiV1PracticesPracticeIdTariffsTariffIdDelete,listHospitalizationPracticesApiV1HospitalizationsHospitalizationIdPracticesGet,registerHospitalizationPracticeApiV1HospitalizationsHospitalizationIdPracticesPost,performHospitalizationPracticeApiV1HospitalizationsHospitalizationIdPracticesOrderIdPerformPost,cancelHospitalizationPracticeApiV1HospitalizationsHospitalizationIdPracticesOrderIdCancelPost}};
+  /**
+ * Qué dice la cartilla del plan de la internación sobre una práctica: si la cubre, con
+ * qué copago, si está en carencia y si el financiador exige autorización.
+ * @summary Check Practice Coverage
+ */
+const checkPracticeCoverageApiV1HospitalizationsHospitalizationIdPracticesCoverageCheckGet = (
+    hospitalizationId: string,
+    params: CheckPracticeCoverageApiV1HospitalizationsHospitalizationIdPracticesCoverageCheckGetParams,
+ options?: SecondParameter<typeof customInstance<PlanCoverageCheckRead>>,) => {
+      return customInstance<PlanCoverageCheckRead>(
+      {url: `/api/v1/hospitalizations/${hospitalizationId}/practices/coverage-check`, method: 'GET',
+        params
+    },
+      options);
+    }
+  return {listPracticesApiV1PracticesGet,createPracticeApiV1PracticesPost,getPracticeApiV1PracticesPracticeIdGet,updatePracticeApiV1PracticesPracticeIdPut,deletePracticeApiV1PracticesPracticeIdDelete,listPracticeTariffsApiV1PracticesPracticeIdTariffsGet,createPracticeTariffApiV1PracticesPracticeIdTariffsPost,getEffectivePracticeTariffApiV1PracticesPracticeIdTariffsEffectiveGet,updatePracticeTariffApiV1PracticesPracticeIdTariffsTariffIdPut,deletePracticeTariffApiV1PracticesPracticeIdTariffsTariffIdDelete,listHospitalizationPracticesApiV1HospitalizationsHospitalizationIdPracticesGet,registerHospitalizationPracticeApiV1HospitalizationsHospitalizationIdPracticesPost,performHospitalizationPracticeApiV1HospitalizationsHospitalizationIdPracticesOrderIdPerformPost,cancelHospitalizationPracticeApiV1HospitalizationsHospitalizationIdPracticesOrderIdCancelPost,checkPracticeCoverageApiV1HospitalizationsHospitalizationIdPracticesCoverageCheckGet}};
 export type ListPracticesApiV1PracticesGetResult = NonNullable<Awaited<ReturnType<ReturnType<typeof getPractices>['listPracticesApiV1PracticesGet']>>>
 export type CreatePracticeApiV1PracticesPostResult = NonNullable<Awaited<ReturnType<ReturnType<typeof getPractices>['createPracticeApiV1PracticesPost']>>>
 export type GetPracticeApiV1PracticesPracticeIdGetResult = NonNullable<Awaited<ReturnType<ReturnType<typeof getPractices>['getPracticeApiV1PracticesPracticeIdGet']>>>
@@ -234,3 +251,4 @@ export type ListHospitalizationPracticesApiV1HospitalizationsHospitalizationIdPr
 export type RegisterHospitalizationPracticeApiV1HospitalizationsHospitalizationIdPracticesPostResult = NonNullable<Awaited<ReturnType<ReturnType<typeof getPractices>['registerHospitalizationPracticeApiV1HospitalizationsHospitalizationIdPracticesPost']>>>
 export type PerformHospitalizationPracticeApiV1HospitalizationsHospitalizationIdPracticesOrderIdPerformPostResult = NonNullable<Awaited<ReturnType<ReturnType<typeof getPractices>['performHospitalizationPracticeApiV1HospitalizationsHospitalizationIdPracticesOrderIdPerformPost']>>>
 export type CancelHospitalizationPracticeApiV1HospitalizationsHospitalizationIdPracticesOrderIdCancelPostResult = NonNullable<Awaited<ReturnType<ReturnType<typeof getPractices>['cancelHospitalizationPracticeApiV1HospitalizationsHospitalizationIdPracticesOrderIdCancelPost']>>>
+export type CheckPracticeCoverageApiV1HospitalizationsHospitalizationIdPracticesCoverageCheckGetResult = NonNullable<Awaited<ReturnType<ReturnType<typeof getPractices>['checkPracticeCoverageApiV1HospitalizationsHospitalizationIdPracticesCoverageCheckGet']>>>

@@ -36,6 +36,7 @@ from app.schemas.practice import (
 )
 from app.services.account import add_charge, require_open_account
 from app.services.audit import record_event
+from app.services.plan_coverage import PlanCoverageCheck, evaluate_coverage
 
 CENTS = Decimal("0.01")
 
@@ -359,6 +360,16 @@ class HospitalizationPracticeService:
             if payload.service_id and not await self.session.get(Service, payload.service_id):
                 raise DomainError("Servicio inexistente", 404)
 
+            prescribed_at = payload.prescribed_at or datetime.now(UTC)
+            check = await self._check_coverage(
+                hospitalization_id,
+                practice,
+                on=(payload.performed_at or prescribed_at).date(),
+                authorization_number=payload.authorization_number,
+                override=payload.override_coverage_rules,
+                override_reason=payload.override_reason,
+            )
+
             order = HospitalizationPractice(
                 hospitalization_id=hospitalization_id,
                 practice_id=practice.id,
@@ -369,9 +380,14 @@ class HospitalizationPracticeService:
                 service_id=payload.service_id,
                 status=PracticeOrderStatus.REQUESTED,
                 quantity=payload.quantity,
-                prescribed_at=payload.prescribed_at or datetime.now(UTC),
+                prescribed_at=prescribed_at,
                 indication=payload.indication,
                 notes=payload.notes,
+                authorization_number=payload.authorization_number,
+                copayment_amount=check.copayment_amount,
+                coverage_override_reason=(
+                    payload.override_reason if payload.override_coverage_rules else None
+                ),
             )
             self.session.add(order)
             await self.session.flush()
@@ -386,6 +402,7 @@ class HospitalizationPracticeService:
                     "practice_id": str(practice.id),
                     "practice_code": practice.code,
                     "prescribed_by_id": str(payload.prescribed_by_id),
+                    **self._coverage_details(check, payload.override_coverage_rules),
                 },
             )
 
@@ -398,6 +415,7 @@ class HospitalizationPracticeService:
                     performed_by_id=payload.performed_by_id,
                     unit_price=payload.unit_price,
                     recorded_by=payload.recorded_by,
+                    check=check,
                 )
             await self.session.flush()
             return order
@@ -427,14 +445,34 @@ class HospitalizationPracticeService:
             if payload.notes:
                 order.notes = payload.notes
 
+            performed_at = payload.performed_at or datetime.now(UTC)
+            # Se vuelve a evaluar: entre la indicación y la realización pueden haber pasado
+            # días, y la carencia se cuenta contra la fecha en que la práctica se hace.
+            check = await self._check_coverage(
+                hospitalization_id,
+                practice,
+                on=performed_at.date(),
+                authorization_number=payload.authorization_number or order.authorization_number,
+                # Si al indicarla ya se decidió hacerla fuera de cartilla, esa decisión vale
+                # para la realización: no se vuelve a pedir el motivo.
+                override=payload.override_coverage_rules
+                or bool(order.coverage_override_reason),
+                override_reason=payload.override_reason or order.coverage_override_reason,
+            )
+            if payload.authorization_number:
+                order.authorization_number = payload.authorization_number
+            if payload.override_coverage_rules and payload.override_reason:
+                order.coverage_override_reason = payload.override_reason
+
             await self._perform(
                 order,
                 practice,
                 hospitalization,
-                performed_at=payload.performed_at or datetime.now(UTC),
+                performed_at=performed_at,
                 performed_by_id=payload.performed_by_id or order.performed_by_id,
                 unit_price=payload.unit_price,
                 recorded_by=payload.recorded_by,
+                check=check,
             )
             await self.session.flush()
             return order
@@ -460,6 +498,7 @@ class HospitalizationPracticeService:
                 return order
 
             now = datetime.now(UTC)
+            await self._void_copayment(order, at=now, actor=payload.actor)
             order.status = PracticeOrderStatus.CANCELLED
             order.cancelled_at = now
             if payload.reason:
@@ -486,6 +525,7 @@ class HospitalizationPracticeService:
         performed_by_id: uuid.UUID | None,
         unit_price: Decimal | None,
         recorded_by: str | None,
+        check: PlanCoverageCheck,
     ) -> None:
         """Register the performance and charge it to the account of the hospitalization."""
 
@@ -511,10 +551,31 @@ class HospitalizationPracticeService:
         )
         await self.session.flush()
 
+        # El copago del plan es plata del afiliado: va como línea aparte para que la cuenta
+        # muestre qué se le cobra a él y qué al financiador.
+        copayment = _money(check.copayment_amount * order.quantity)
+        copayment_item = None
+        if copayment > 0:
+            copayment_item = add_charge(
+                self.session,
+                account,
+                category=ChargeCategory.OTHER,
+                description=f"Copago {practice.code} - {practice.name}",
+                quantity=Decimal(1),
+                unit_price=copayment,
+                charged_at=performed_at,
+                recorded_by=recorded_by,
+                practice_id=practice.id,
+                practice_code=practice.code,
+            )
+            await self.session.flush()
+
         order.status = PracticeOrderStatus.PERFORMED
         order.performed_at = performed_at
         order.performed_by_id = performed_by_id
         order.charge_item_id = item.id
+        order.copayment_amount = check.copayment_amount
+        order.copayment_charge_item_id = copayment_item.id if copayment_item else None
         record_event(
             self.session,
             HospitalizationEventType.PRACTICE_PERFORMED,
@@ -526,8 +587,84 @@ class HospitalizationPracticeService:
                 "practice_code": practice.code,
                 "charge_item_id": str(item.id),
                 "amount": str(item.amount),
+                "copayment": str(copayment),
+                "plan_coverage": check.status.value,
             },
         )
+
+    async def coverage_check(
+        self,
+        hospitalization_id: uuid.UUID,
+        practice_id: uuid.UUID,
+        *,
+        on: date | None = None,
+    ) -> PlanCoverageCheck:
+        """Qué dice la cartilla del plan, antes de indicar la práctica."""
+
+        await self._require_hospitalization(hospitalization_id)
+        practice = await MedicalPracticeService(self.session).get(practice_id)
+        account = await require_open_account(self.session, hospitalization_id)
+        coverage = (
+            await self.session.get(PatientCoverage, account.coverage_id)
+            if account.coverage_id
+            else None
+        )
+        return await evaluate_coverage(
+            self.session, coverage, practice, on=on or datetime.now(UTC).date()
+        )
+
+    async def _check_coverage(
+        self,
+        hospitalization_id: uuid.UUID,
+        practice: MedicalPractice,
+        *,
+        on: date,
+        authorization_number: str | None,
+        override: bool,
+        override_reason: str | None,
+    ) -> PlanCoverageCheck:
+        """Aplica la cartilla del plan de la cobertura de la internación.
+
+        Lo que la cartilla no cubre se rechaza, pero se puede forzar: en una guardia la
+        práctica se hace igual y después se discute quién la paga. Forzar exige un motivo,
+        que queda asentado en la práctica y en el evento de la internación.
+        """
+
+        account = await require_open_account(self.session, hospitalization_id)
+        coverage = (
+            await self.session.get(PatientCoverage, account.coverage_id)
+            if account.coverage_id
+            else None
+        )
+        check = await evaluate_coverage(self.session, coverage, practice, on=on)
+
+        if override:
+            if not (override_reason and override_reason.strip()):
+                raise DomainError(
+                    "Informe el motivo por el que se registra la práctica fuera de la cartilla",
+                    422,
+                )
+            return check
+        if check.blocked:
+            raise DomainError(check.message or "La cartilla del plan no cubre la práctica", 409)
+        if check.requires_authorization and not (
+            authorization_number and authorization_number.strip()
+        ):
+            raise DomainError(
+                f"El plan exige autorización para la práctica {practice.code}: informe el "
+                "número que dio el financiador",
+                409,
+            )
+        return check
+
+    @staticmethod
+    def _coverage_details(check: PlanCoverageCheck, override: bool) -> dict:
+        details = {"plan_coverage": check.status.value}
+        if check.copayment_amount:
+            details["copayment"] = str(check.copayment_amount)
+        if override:
+            details["coverage_override"] = "true"
+        return details
 
     async def _unit_price(
         self,
@@ -561,6 +698,24 @@ class HospitalizationPracticeService:
                 422,
             ) from missing
         return tariff.total_amount
+
+    async def _void_copayment(
+        self,
+        order: HospitalizationPractice,
+        *,
+        at: datetime,
+        actor: str | None,
+    ) -> None:
+        """El copago no sobrevive a la práctica que lo generó."""
+
+        if not order.copayment_charge_item_id:
+            return
+        item = await self.session.get(ChargeItem, order.copayment_charge_item_id)
+        if item and item.status == ChargeItemStatus.ACTIVE:
+            item.status = ChargeItemStatus.VOID
+            item.voided_at = at
+            item.voided_by = actor
+            item.void_reason = "Práctica anulada"
 
     async def _charge_is_void(self, order: HospitalizationPractice) -> bool:
         """A performed practice can be re-charged or annulled once its charge is voided."""

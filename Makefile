@@ -1,4 +1,4 @@
-.PHONY: db-up db-down install run migrate migration seed-practices test lint
+.PHONY: db-up db-down install run migrate migration seed-practices inherit-waiting-periods test lint
 
 db-up:
 	docker compose up -d postgres
@@ -26,3 +26,6 @@ test:
 
 lint:
 	ruff check .
+
+inherit-waiting-periods:
+	python -m app.db.maintenance.waiting_periods $(ARGS)

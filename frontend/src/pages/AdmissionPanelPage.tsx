@@ -2,7 +2,8 @@ import { useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { getDefault } from '@/api/endpoints/default/default';
-import type { AdmissionCreate, PatientCreate } from '@/api/model';
+import { getRegistry } from '@/api/endpoints/registry/registry';
+import type { AdmissionCreate, PatientCoverageCreate, PatientCreate } from '@/api/model';
 import { Badge, Card, EmptyState, ErrorState, PageHeader, Spinner } from '@/components/ui';
 import { ADMISSION_STATUS_COLORS, ADMISSION_STATUS_LABELS } from '@/config/workflowLabels';
 import {
@@ -25,6 +26,29 @@ const ORIGIN_LABELS = {
   SCHEDULED_MEDICAL_ORDER: 'Orden medica programada',
 } as const;
 
+/** The clerk either picks a coverage the patient already has, loads a new one, or admits
+ * the patient as private. */
+type CoverageChoice = 'NONE' | 'NEW' | string;
+
+type CoverageDraft = {
+  payer_id: string;
+  health_plan_id: string;
+  payer_name: string;
+  member_number: string;
+  /** Alta del afiliado: es desde cuando se cuentan las carencias de la cartilla. */
+  valid_from: string;
+  authorization_required: boolean;
+};
+
+const emptyCoverageDraft: CoverageDraft = {
+  payer_id: '',
+  health_plan_id: '',
+  payer_name: '',
+  member_number: '',
+  valid_from: '',
+  authorization_required: false,
+};
+
 const initialPatient: PatientCreate = {
   first_name: '',
   last_name: '',
@@ -39,12 +63,8 @@ const initialAdmission: AdmissionCreate = {
   admission_type: 'EMERGENCY',
   identity_validated: false,
   duplicate_checked: false,
-  coverage: {
-    payer_name: '',
-    plan_name: '',
-    member_number: '',
-    authorization_required: false,
-  },
+  coverage_id: null,
+  coverage: null,
   authorization_status: 'NOT_REQUIRED',
   authorization_number: '',
   responsible_contact_name: '',
@@ -62,6 +82,7 @@ const initialAdmission: AdmissionCreate = {
 
 export default function AdmissionPanelPage() {
   const api = getDefault();
+  const registry = getRegistry();
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const [search, setSearch] = useState('');
@@ -72,6 +93,8 @@ export default function AdmissionPanelPage() {
     DATA_PROCESSING: false,
     PROCEDURE: false,
   });
+  const [coverageChoice, setCoverageChoice] = useState<CoverageChoice>('NONE');
+  const [coverageDraft, setCoverageDraft] = useState<CoverageDraft>(emptyCoverageDraft);
 
   const patientsQuery = useQuery({
     queryKey: ['patients'],
@@ -89,6 +112,22 @@ export default function AdmissionPanelPage() {
     queryKey: ['admissions'],
     queryFn: () => api.listAdmissionsApiV1AdmissionsGet(),
   });
+  const payersQuery = useQuery({
+    queryKey: ['payers'],
+    queryFn: () => registry.listPayersApiV1PayersGet(),
+  });
+  const patientCoveragesQuery = useQuery({
+    queryKey: ['patient-coverages', admissionForm.patient_id],
+    queryFn: () =>
+      registry.listPatientCoveragesApiV1PatientsPatientIdCoveragesGet(admissionForm.patient_id),
+    enabled: admissionForm.patient_id !== '',
+  });
+  const plansQuery = useQuery({
+    queryKey: ['health-plans', coverageDraft.payer_id],
+    queryFn: () =>
+      registry.listPayerHealthPlansApiV1PayersPayerIdHealthPlansGet(coverageDraft.payer_id),
+    enabled: coverageDraft.payer_id !== '',
+  });
 
   const createPatientMutation = useMutation({
     mutationFn: (data: PatientCreate) => api.createPatientApiV1PatientsPost(data),
@@ -96,6 +135,8 @@ export default function AdmissionPanelPage() {
       queryClient.invalidateQueries({ queryKey: ['patients'] });
       setAdmissionForm((current) => ({ ...current, patient_id: patient.id }));
       setPatientForm(initialPatient);
+      setCoverageChoice('NEW');
+      setCoverageDraft(emptyCoverageDraft);
     },
   });
 
@@ -107,6 +148,8 @@ export default function AdmissionPanelPage() {
       queryClient.invalidateQueries({ queryKey: ['beds'] });
       setAdmissionForm(initialAdmission);
       setSignedConsents({ GENERAL_ADMISSION: false, DATA_PROCESSING: false, PROCEDURE: false });
+      setCoverageChoice('NONE');
+      setCoverageDraft(emptyCoverageDraft);
       // The request creates the hospitalization: continue the flow on it.
       if (admission.hospitalization_id) {
         navigate(`/hospitalizations/${admission.hospitalization_id}`);
@@ -143,6 +186,31 @@ export default function AdmissionPanelPage() {
   }, [patients, search]);
 
   const selectedPatient = patients.find((patient) => patient.id === admissionForm.patient_id);
+  const payers = payersQuery.data ?? [];
+  const plans = plansQuery.data ?? [];
+  const patientCoverages = patientCoveragesQuery.data ?? [];
+  const chosenCoverage = patientCoverages.find((coverage) => coverage.id === coverageChoice);
+
+  /** Selecting a patient starts the coverage step over: the ones listed belong to them. */
+  const selectPatient = (patientId: string) => {
+    setAdmissionForm((current) => ({
+      ...current,
+      patient_id: patientId,
+      identity_validated: true,
+      duplicate_checked: true,
+    }));
+    setCoverageChoice('NONE');
+    setCoverageDraft(emptyCoverageDraft);
+  };
+
+  /** A coverage that needs authorization leaves the admission pending, unless the clerk
+   * already resolved it. */
+  const chooseCoverage = (choice: CoverageChoice, needsAuthorization: boolean) => {
+    setCoverageChoice(choice);
+    if (needsAuthorization && admissionForm.authorization_status === 'NOT_REQUIRED') {
+      setAdmissionForm((current) => ({ ...current, authorization_status: 'PENDING' }));
+    }
+  };
   const duplicateMatches = patients.filter(
     (patient) =>
       patient.document_type === patientForm.document_type &&
@@ -154,7 +222,12 @@ export default function AdmissionPanelPage() {
     { label: 'Paciente', done: Boolean(admissionForm.patient_id) },
     { label: 'Identidad', done: Boolean(admissionForm.identity_validated) },
     { label: 'Duplicados', done: Boolean(admissionForm.duplicate_checked) },
-    { label: 'Cobertura', done: Boolean(admissionForm.authorization_status) },
+    {
+      label: 'Cobertura',
+      done:
+        coverageChoice !== 'NEW' ||
+        Boolean(coverageDraft.payer_id || coverageDraft.payer_name.trim()),
+    },
     { label: 'Consentimientos', done: signedConsents.GENERAL_ADMISSION },
     { label: 'Ingreso', done: Boolean(admissionForm.admission_reason && admissionForm.responsible_physician) },
   ];
@@ -162,6 +235,35 @@ export default function AdmissionPanelPage() {
   const createPatient = (event: React.FormEvent) => {
     event.preventDefault();
     createPatientMutation.mutate(patientForm);
+  };
+
+  /** The API takes ``coverage_id`` for a coverage the patient already has, or ``coverage``
+   * to register a new one along with the admission, but never both. */
+  const coveragePayload = (): {
+    coverage_id: string | null;
+    coverage: PatientCoverageCreate | null;
+  } => {
+    if (coverageChoice === 'NONE') return { coverage_id: null, coverage: null };
+    if (coverageChoice !== 'NEW') return { coverage_id: coverageChoice, coverage: null };
+
+    const fromCatalog = coverageDraft.payer_id !== '';
+    if (!fromCatalog && coverageDraft.payer_name.trim() === '') {
+      return { coverage_id: null, coverage: null };
+    }
+    return {
+      coverage_id: null,
+      coverage: {
+        payer_id: coverageDraft.payer_id || null,
+        health_plan_id: coverageDraft.health_plan_id || null,
+        // The catalog fills the names; free text is for the card the patient brings.
+        payer_name: fromCatalog ? null : coverageDraft.payer_name.trim(),
+        plan_name: null,
+        member_number: coverageDraft.member_number.trim() || null,
+        valid_from: coverageDraft.valid_from || null,
+        authorization_required: coverageDraft.authorization_required,
+        status: 'ACTIVE',
+      },
+    };
   };
 
   const createAdmission = (event: React.FormEvent) => {
@@ -174,12 +276,9 @@ export default function AdmissionPanelPage() {
           admissionForm.responsible_contact_name ||
           `${selectedPatient?.first_name ?? ''} ${selectedPatient?.last_name ?? ''}`.trim(),
       }));
-    const coverage = admissionForm.coverage?.payer_name
-      ? admissionForm.coverage
-      : null;
     createAdmissionMutation.mutate({
       ...admissionForm,
-      coverage,
+      ...coveragePayload(),
       requested_bed_id: admissionForm.requested_bed_id || null,
       requesting_service_id: admissionForm.requesting_service_id || null,
       consents,
@@ -228,14 +327,7 @@ export default function AdmissionPanelPage() {
                       <button
                         key={patient.id}
                         type="button"
-                        onClick={() =>
-                          setAdmissionForm((current) => ({
-                            ...current,
-                            patient_id: patient.id,
-                            identity_validated: true,
-                            duplicate_checked: true,
-                          }))
-                        }
+                        onClick={() => selectPatient(patient.id)}
                         className={`flex w-full items-center justify-between px-3 py-2 text-left text-sm transition-colors hover:bg-slate-50 ${
                           admissionForm.patient_id === patient.id ? 'bg-teal-50 text-teal-800' : 'text-slate-600'
                         }`}
@@ -310,40 +402,172 @@ export default function AdmissionPanelPage() {
                 <ShieldCheck className="h-5 w-5 text-teal-600" />
                 <h2 className="text-base font-bold text-slate-800">Cobertura y autorizacion</h2>
               </div>
-              <div className="grid gap-4 md:grid-cols-4">
-                <input
-                  placeholder="Cobertura"
-                  value={admissionForm.coverage?.payer_name ?? ''}
-                  onChange={(e) =>
-                    setAdmissionForm({
-                      ...admissionForm,
-                      coverage: { ...admissionForm.coverage!, payer_name: e.target.value },
-                    })
-                  }
-                  className="rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-teal-500"
-                />
-                <input
-                  placeholder="Plan"
-                  value={admissionForm.coverage?.plan_name ?? ''}
-                  onChange={(e) =>
-                    setAdmissionForm({
-                      ...admissionForm,
-                      coverage: { ...admissionForm.coverage!, plan_name: e.target.value },
-                    })
-                  }
-                  className="rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-teal-500"
-                />
-                <input
-                  placeholder="Afiliado"
-                  value={admissionForm.coverage?.member_number ?? ''}
-                  onChange={(e) =>
-                    setAdmissionForm({
-                      ...admissionForm,
-                      coverage: { ...admissionForm.coverage!, member_number: e.target.value },
-                    })
-                  }
-                  className="rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-teal-500"
-                />
+              {!admissionForm.patient_id && (
+                <p className="rounded-lg bg-slate-50 px-4 py-3 text-sm text-slate-500">
+                  Elija primero un paciente para ver sus coberturas.
+                </p>
+              )}
+
+              {admissionForm.patient_id && (
+                <div className="space-y-3">
+                  {patientCoveragesQuery.isLoading && <Spinner />}
+
+                  {patientCoverages.map((coverage) => (
+                    <label
+                      key={coverage.id}
+                      className={`flex cursor-pointer items-start gap-3 rounded-lg border px-4 py-3 transition-colors ${
+                        coverageChoice === coverage.id
+                          ? 'border-teal-400 bg-teal-50/60'
+                          : 'border-slate-200 hover:bg-slate-50'
+                      }`}
+                    >
+                      <input
+                        type="radio"
+                        name="coverage-choice"
+                        checked={coverageChoice === coverage.id}
+                        onChange={() => chooseCoverage(coverage.id, coverage.authorization_required)}
+                        className="mt-1 h-4 w-4"
+                      />
+                      <span>
+                        <span className="block text-sm font-semibold text-slate-700">
+                          {coverage.payer_name}
+                          {coverage.plan_name ? ` · ${coverage.plan_name}` : ''}
+                        </span>
+                        <span className="block text-xs text-slate-400">
+                          {coverage.member_number
+                            ? `Afiliado ${coverage.member_number}`
+                            : 'Sin numero de afiliado'}
+                          {coverage.status !== 'ACTIVE' ? ` · ${coverage.status}` : ''}
+                          {coverage.authorization_required ? ' · requiere autorizacion' : ''}
+                        </span>
+                      </span>
+                    </label>
+                  ))}
+
+                  <label
+                    className={`flex cursor-pointer items-center gap-3 rounded-lg border px-4 py-3 transition-colors ${
+                      coverageChoice === 'NEW'
+                        ? 'border-teal-400 bg-teal-50/60'
+                        : 'border-slate-200 hover:bg-slate-50'
+                    }`}
+                  >
+                    <input
+                      type="radio"
+                      name="coverage-choice"
+                      checked={coverageChoice === 'NEW'}
+                      onChange={() => chooseCoverage('NEW', coverageDraft.authorization_required)}
+                      className="h-4 w-4"
+                    />
+                    <span className="text-sm font-semibold text-slate-700">Cargar una cobertura nueva</span>
+                  </label>
+
+                  {coverageChoice === 'NEW' && (
+                    <div className="grid gap-4 rounded-lg bg-slate-50 p-4 md:grid-cols-3">
+                      <select
+                        value={coverageDraft.payer_id}
+                        onChange={(e) =>
+                          setCoverageDraft({
+                            ...coverageDraft,
+                            payer_id: e.target.value,
+                            health_plan_id: '',
+                          })
+                        }
+                        className="rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-teal-500"
+                      >
+                        <option value="">Sin catalogo (cargar a mano)</option>
+                        {payers.map((payer) => (
+                          <option key={payer.id} value={payer.id}>
+                            {payer.name}
+                          </option>
+                        ))}
+                      </select>
+
+                      {coverageDraft.payer_id ? (
+                        <select
+                          value={coverageDraft.health_plan_id}
+                          onChange={(e) =>
+                            setCoverageDraft({ ...coverageDraft, health_plan_id: e.target.value })
+                          }
+                          className="rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-teal-500"
+                        >
+                          <option value="">Sin plan</option>
+                          {plans.map((plan) => (
+                            <option key={plan.id} value={plan.id}>
+                              {plan.name}
+                            </option>
+                          ))}
+                        </select>
+                      ) : (
+                        <input
+                          placeholder="Nombre del financiador"
+                          value={coverageDraft.payer_name}
+                          onChange={(e) =>
+                            setCoverageDraft({ ...coverageDraft, payer_name: e.target.value })
+                          }
+                          className="rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-teal-500"
+                        />
+                      )}
+
+                      <input
+                        placeholder="Afiliado"
+                        value={coverageDraft.member_number}
+                        onChange={(e) =>
+                          setCoverageDraft({ ...coverageDraft, member_number: e.target.value })
+                        }
+                        className="rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-teal-500"
+                      />
+
+                      <label className="text-xs text-slate-500 md:col-span-3">
+                        Afiliado desde (las carencias de la cartilla se cuentan desde esta fecha)
+                        <input
+                          type="date"
+                          value={coverageDraft.valid_from}
+                          onChange={(e) =>
+                            setCoverageDraft({ ...coverageDraft, valid_from: e.target.value })
+                          }
+                          className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-700 outline-none focus:border-teal-500 md:w-64"
+                        />
+                      </label>
+
+                      <label className="flex items-center gap-2 text-sm text-slate-600 md:col-span-3">
+                        <input
+                          type="checkbox"
+                          checked={coverageDraft.authorization_required}
+                          onChange={(e) =>
+                            setCoverageDraft({
+                              ...coverageDraft,
+                              authorization_required: e.target.checked,
+                            })
+                          }
+                          className="h-4 w-4 rounded border-slate-300"
+                        />
+                        Requiere autorizacion previa
+                      </label>
+                    </div>
+                  )}
+
+                  <label
+                    className={`flex cursor-pointer items-center gap-3 rounded-lg border px-4 py-3 transition-colors ${
+                      coverageChoice === 'NONE'
+                        ? 'border-teal-400 bg-teal-50/60'
+                        : 'border-slate-200 hover:bg-slate-50'
+                    }`}
+                  >
+                    <input
+                      type="radio"
+                      name="coverage-choice"
+                      checked={coverageChoice === 'NONE'}
+                      onChange={() => setCoverageChoice('NONE')}
+                      className="h-4 w-4"
+                    />
+                    <span className="text-sm font-semibold text-slate-700">
+                      Particular, sin cobertura
+                    </span>
+                  </label>
+                </div>
+              )}
+
+              <div className="mt-4 grid gap-4 md:grid-cols-2">
                 <select
                   value={admissionForm.authorization_status}
                   onChange={(e) =>
@@ -359,15 +583,23 @@ export default function AdmissionPanelPage() {
                   <option value="AUTHORIZED">Autorizada</option>
                   <option value="REJECTED">Rechazada</option>
                 </select>
+                <input
+                  placeholder="Numero de autorizacion"
+                  value={admissionForm.authorization_number ?? ''}
+                  onChange={(e) =>
+                    setAdmissionForm({ ...admissionForm, authorization_number: e.target.value })
+                  }
+                  className="rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-teal-500"
+                />
               </div>
-              <input
-                placeholder="Numero de autorizacion"
-                value={admissionForm.authorization_number ?? ''}
-                onChange={(e) =>
-                  setAdmissionForm({ ...admissionForm, authorization_number: e.target.value })
-                }
-                className="mt-4 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-teal-500"
-              />
+
+              {chosenCoverage?.authorization_required &&
+                admissionForm.authorization_status === 'PENDING' && (
+                  <p className="mt-3 rounded-lg bg-amber-50 px-4 py-2 text-xs font-medium text-amber-700">
+                    {chosenCoverage.payer_name} exige autorizacion previa: la admision queda
+                    pendiente hasta que se cargue el numero.
+                  </p>
+                )}
             </Card>
 
             <Card className="p-5">

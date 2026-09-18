@@ -7,12 +7,13 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.exceptions import DomainError
 from app.models.account import Account, ChargeItem
 from app.models.bed import Bed
-from app.models.practice import HospitalizationPractice
+from app.models.practice import HealthPlanPractice, HospitalizationPractice
 from app.models.room import Room
 from app.schemas.domain import BedRead, PatientRead
-from app.schemas.practice import HospitalizationPracticeRead
+from app.schemas.practice import HealthPlanPracticeRead, HospitalizationPracticeRead
 from app.schemas.workflow import AccountRead, ChargeItemRead
 from app.services.account import AccountService
+from app.services.plan_coverage import effective_waiting_period
 
 
 async def bed_read(
@@ -73,4 +74,29 @@ async def hospitalization_practice_read(
         charge = ChargeItemRead.model_validate(item) if item else None
     return HospitalizationPracticeRead.model_validate(order).model_copy(
         update={"charge": charge}
+    )
+
+
+def health_plan_practice_read(entry: HealthPlanPractice) -> HealthPlanPracticeRead:
+    """Flattens the practice into the row, so the cartilla reads without a second request."""
+
+    practice = entry.practice
+    return HealthPlanPracticeRead(
+        id=entry.id,
+        health_plan_id=entry.health_plan_id,
+        practice_id=entry.practice_id,
+        practice_code=practice.code,
+        practice_name=practice.name,
+        nomenclador=practice.nomenclador,
+        chapter=practice.chapter,
+        practice_type=practice.practice_type,
+        practice_requires_authorization=practice.requires_authorization,
+        practice_waiting_period_days=practice.default_waiting_period_days,
+        is_covered=entry.is_covered,
+        waiting_period_days=entry.waiting_period_days,
+        effective_waiting_period_days=effective_waiting_period(entry, practice),
+        copayment_amount=entry.copayment_amount,
+        requires_authorization=entry.requires_authorization,
+        notes=entry.notes,
+        created_at=entry.created_at,
     )

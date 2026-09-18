@@ -65,6 +65,10 @@ class PayerCreate(BaseModel):
     tax_id: str | None = Field(default=None, max_length=40)
 
 
+class PayerUpdate(PayerCreate):
+    pass
+
+
 class PayerRead(ORMModel):
     id: uuid.UUID
     name: str
@@ -76,6 +80,11 @@ class PayerRead(ORMModel):
 class HealthPlanCreate(BaseModel):
     name: str = Field(min_length=1, max_length=150)
     code: str = Field(min_length=1, max_length=40)
+
+
+class HealthPlanUpdate(HealthPlanCreate):
+    """The payer of a plan is not editable: moving a plan would move the coverages and the
+    tariffs already agreed under it."""
 
 
 class HealthPlanRead(ORMModel):

@@ -10,12 +10,12 @@
 import type {
   ChargeCategory,
   ChargeItemRead,
-  HealthPlanRead,
   HospitalizationPracticeRead,
   MedicalPracticeRead,
   MedicalPracticeTariffRead,
   Nomenclador,
-  PayerRead,
+  PatientCoverageRead,
+  PlanCoverageCheckRead,
   PracticeChapter,
   PracticeSetting,
   PracticeType,
@@ -66,6 +66,7 @@ function practiceFromBody(
     radiology_units: decimal(body.radiology_units, '0.00')!,
     requires_authorization: flag(body.requires_authorization),
     requires_consent: flag(body.requires_consent),
+    default_waiting_period_days: Number(body.default_waiting_period_days ?? 0) || 0,
     is_active: flag(body.is_active, true),
     valid_from: text(body.valid_from),
     valid_until: text(body.valid_until),
@@ -182,16 +183,149 @@ const CHARGE_CATEGORIES: Partial<Record<PracticeType, ChargeCategory>> = {
   MODULO: 'HOSPITALIZATION_DAY',
 };
 
+/** Coverage row of the hospitalization, taken from its admission request. */
+function coverageRowOf(db: MockDB, hospitalizationId: string): PatientCoverageRead | null {
+  const admission = db.admissions.find((item) => item.hospitalization_id === hospitalizationId);
+  return admission?.coverage_id
+    ? db.coverages.find((item) => item.id === admission.coverage_id) ?? null
+    : null;
+}
+
 /** Coverage of the hospitalization, taken from its admission request. */
 function coverageOf(db: MockDB, hospitalizationId: string) {
-  const admission = db.admissions.find((item) => item.hospitalization_id === hospitalizationId);
-  const coverage = admission?.coverage_id
-    ? db.coverages.find((item) => item.id === admission.coverage_id)
-    : null;
+  const coverage = coverageRowOf(db, hospitalizationId);
   return {
     payerId: coverage?.payer_id ?? null,
     planId: coverage?.health_plan_id ?? null,
   };
+}
+
+/** Misma evaluación que ``evaluate_coverage`` en la API. */
+function evaluateCoverage(
+  db: MockDB,
+  hospitalizationId: string,
+  practice: MedicalPracticeRead,
+  on: string,
+): PlanCoverageCheckRead {
+  const base = {
+    copayment_amount: '0.00',
+    requires_authorization: false,
+    waiting_period_days: 0,
+    available_from: null,
+    health_plan_id: null,
+    message: null,
+  };
+  const coverage = coverageRowOf(db, hospitalizationId);
+  if (!coverage) return { ...base, status: 'NO_COVERAGE', blocked: false };
+  if (!coverage.health_plan_id) {
+    return {
+      ...base,
+      status: 'NO_PLAN',
+      blocked: false,
+      message:
+        `La cobertura de ${coverage.payer_name} no está vinculada a un plan del catálogo: ` +
+        'no se aplican cartilla, carencias ni copagos',
+    };
+  }
+  const planId = coverage.health_plan_id;
+  const entry = db.planPractices.find(
+    (item) => item.health_plan_id === planId && item.practice_id === practice.id,
+  );
+  if (!entry) {
+    const loaded = db.planPractices.some((item) => item.health_plan_id === planId);
+    if (!loaded) {
+      // Cartilla vacía: nadie la cargó, no es que el plan no cubra nada.
+      return { ...base, status: 'NO_CARTILLA', blocked: false, health_plan_id: planId };
+    }
+    return {
+      ...base,
+      status: 'NOT_LISTED',
+      blocked: true,
+      health_plan_id: planId,
+      message: `La práctica ${practice.code} no está en la cartilla del plan de ${coverage.payer_name}`,
+    };
+  }
+
+  // La carencia del plan pisa a la de la práctica; sin carencia propia rige la del catálogo.
+  const waitingPeriod = entry.waiting_period_days ?? practice.default_waiting_period_days;
+  const common = {
+    copayment_amount: entry.copayment_amount,
+    requires_authorization: entry.requires_authorization,
+    waiting_period_days: waitingPeriod,
+    health_plan_id: planId,
+    available_from: null as string | null,
+    message: null as string | null,
+  };
+  if (!entry.is_covered) {
+    return {
+      ...common,
+      status: 'NOT_COVERED',
+      blocked: true,
+      message: `El plan de ${coverage.payer_name} no cubre la práctica ${practice.code}`,
+    };
+  }
+  if (coverage.valid_from && waitingPeriod > 0) {
+    const from = new Date(`${coverage.valid_from}T00:00:00`);
+    from.setDate(from.getDate() + waitingPeriod);
+    const availableFrom = from.toISOString().slice(0, 10);
+    common.available_from = availableFrom;
+    if (on < availableFrom) {
+      return {
+        ...common,
+        status: 'WAITING_PERIOD',
+        blocked: true,
+        message:
+          `La práctica ${practice.code} está en carencia hasta el ${availableFrom} ` +
+          `(${waitingPeriod} días desde el alta de la cobertura)`,
+      };
+    }
+  }
+  if (waitingPeriod > 0 && !coverage.valid_from) {
+    common.message =
+      `La cobertura de ${coverage.payer_name} no tiene fecha de alta: la carencia de ` +
+      `${waitingPeriod} días no puede verificarse`;
+  }
+  return { ...common, status: 'COVERED', blocked: false };
+}
+
+/** Aplica la cartilla al indicar o realizar; devuelve el error que corresponda. */
+function enforceCoverage(
+  db: MockDB,
+  hospitalizationId: string,
+  practice: MedicalPracticeRead,
+  on: string,
+  body: Record<string, unknown>,
+  previousOverride: string | null = null,
+): PracticeResult | PlanCoverageCheckRead {
+  const check = evaluateCoverage(db, hospitalizationId, practice, on);
+  const overrideReason = text(body.override_reason) ?? previousOverride;
+  const override = body.override_coverage_rules === true || previousOverride !== null;
+  if (override) {
+    if (!overrideReason) {
+      return err(
+        422,
+        'Informe el motivo por el que se registra la práctica fuera de la cartilla',
+      );
+    }
+    return check;
+  }
+  if (check.blocked) {
+    return err(409, check.message ?? 'La cartilla del plan no cubre la práctica');
+  }
+  if (check.requires_authorization && !text(body.authorization_number)) {
+    return err(
+      409,
+      `El plan exige autorización para la práctica ${practice.code}: informe el número que ` +
+        'dio el financiador',
+    );
+  }
+  return check;
+}
+
+function isCheck(
+  value: PracticeResult | PlanCoverageCheckRead,
+): value is PlanCoverageCheckRead {
+  return !('kind' in value);
 }
 
 /** The performance is what charges the account of the hospitalization. */
@@ -201,6 +335,7 @@ function chargePractice(
   practice: MedicalPracticeRead,
   performedAt: string,
   unitPrice: string | null,
+  check: PlanCoverageCheckRead,
 ): PracticeResult | ChargeItemRead {
   const { payerId, planId } = coverageOf(db, order.hospitalization_id);
   let price = unitPrice;
@@ -241,14 +376,47 @@ function chargePractice(
     void_reason: null,
   };
   db.chargeItems.push(item);
+
+  // El copago del plan es plata del afiliado: línea aparte, como en la API.
+  const copayment = Number(check.copayment_amount) * quantity;
+  let copaymentItem: ChargeItemRead | null = null;
+  if (copayment > 0) {
+    copaymentItem = {
+      id: uuid(),
+      account_id: accountIdOf(order.hospitalization_id),
+      practice_id: practice.id,
+      practice_code: practice.code,
+      category: 'OTHER',
+      description: `Copago ${practice.code} - ${practice.name}`,
+      quantity: '1.000',
+      unit_price: copayment.toFixed(2),
+      amount: copayment.toFixed(2),
+      charged_at: performedAt,
+      recorded_by: null,
+      notes: null,
+      status: 'ACTIVE',
+      voided_at: null,
+      voided_by: null,
+      void_reason: null,
+    };
+    db.chargeItems.push(copaymentItem);
+  }
+
   order.status = 'PERFORMED';
   order.performed_at = performedAt;
   order.charge_item_id = item.id;
   order.charge = item;
+  order.copayment_amount = check.copayment_amount;
+  order.copayment_charge_item_id = copaymentItem?.id ?? null;
   recordEvent(db, 'PRACTICE_PERFORMED', {
     hospitalization_id: order.hospitalization_id,
     occurred_at: performedAt,
-    details: { practice_code: practice.code, amount: item.amount },
+    details: {
+      practice_code: practice.code,
+      amount: item.amount,
+      copayment: copayment.toFixed(2),
+      plan_coverage: check.status,
+    },
   });
   return item;
 }
@@ -280,47 +448,6 @@ export function handlePracticeRequest(
   body: Record<string, unknown>,
   params: Record<string, unknown>,
 ): PracticeResult | null {
-  // --------------------------------------------------------------- payers
-  if (url === '/api/v1/payers' && method === 'get') return ok(db.payers);
-  if (url === '/api/v1/payers' && method === 'post') {
-    if (db.payers.some((payer) => payer.code === body.code)) {
-      return err(409, 'Código de financiador duplicado');
-    }
-    const payer: PayerRead = {
-      id: uuid(),
-      name: String(body.name ?? ''),
-      code: String(body.code ?? ''),
-      tax_id: text(body.tax_id),
-      created_at: now(),
-    };
-    db.payers.push(payer);
-    saveDB(db);
-    return ok(payer, 201);
-  }
-
-  const plansMatch = url.match(/^\/api\/v1\/payers\/([^/]+)\/health-plans$/);
-  if (plansMatch) {
-    const payerId = plansMatch[1];
-    if (!db.payers.some((payer) => payer.id === payerId)) {
-      return err(404, 'Financiador inexistente');
-    }
-    if (method === 'get') {
-      return ok(db.healthPlans.filter((plan) => plan.payer_id === payerId));
-    }
-    if (method === 'post') {
-      const plan: HealthPlanRead = {
-        id: uuid(),
-        payer_id: payerId,
-        name: String(body.name ?? ''),
-        code: String(body.code ?? ''),
-        created_at: now(),
-      };
-      db.healthPlans.push(plan);
-      saveDB(db);
-      return ok(plan, 201);
-    }
-  }
-
   // ------------------------------------------------------------ practices
   if (url === '/api/v1/practices' && method === 'get') {
     const search = text(params.search)?.toLowerCase();
@@ -462,6 +589,20 @@ export function handlePracticeRequest(
   }
 
   // ------------------------------------------- practices of a hospitalization
+  const coverageCheckMatch = url.match(
+    /^\/api\/v1\/hospitalizations\/([^/]+)\/practices\/coverage-check$/,
+  );
+  if (coverageCheckMatch && method === 'get') {
+    const hospitalizationId = coverageCheckMatch[1];
+    if (!db.hospitalizations.some((item) => item.id === hospitalizationId)) {
+      return err(404, 'Internación inexistente');
+    }
+    const practice = db.practices.find((item) => item.id === text(params.practice_id));
+    if (!practice) return err(404, 'Práctica inexistente');
+    const on = text(params.on) ?? now().slice(0, 10);
+    return ok(evaluateCoverage(db, hospitalizationId, practice, on));
+  }
+
   const hospPracticesMatch = url.match(/^\/api\/v1\/hospitalizations\/([^/]+)\/practices$/);
   if (hospPracticesMatch) {
     const hospitalizationId = hospPracticesMatch[1];
@@ -491,6 +632,16 @@ export function handlePracticeRequest(
         return err(404, 'Profesional ejecutor inexistente');
       }
 
+      const prescribedAt = text(body.prescribed_at) ?? now();
+      const check = enforceCoverage(
+        db,
+        hospitalizationId,
+        practice,
+        (text(body.performed_at) ?? prescribedAt).slice(0, 10),
+        body,
+      );
+      if (!isCheck(check)) return check;
+
       const order: HospitalizationPracticeRead = {
         id: uuid(),
         hospitalization_id: hospitalizationId,
@@ -503,23 +654,40 @@ export function handlePracticeRequest(
         charge_item_id: null,
         status: 'REQUESTED',
         quantity: (Number(body.quantity ?? 1) || 1).toFixed(3),
-        prescribed_at: text(body.prescribed_at) ?? now(),
+        prescribed_at: prescribedAt,
         performed_at: null,
         cancelled_at: null,
         indication: text(body.indication),
         notes: text(body.notes),
+        authorization_number: text(body.authorization_number),
+        copayment_amount: check.copayment_amount,
+        copayment_charge_item_id: null,
+        coverage_override_reason:
+          body.override_coverage_rules === true ? text(body.override_reason) : null,
         created_at: now(),
         charge: null,
       };
       recordEvent(db, 'PRACTICE_ORDERED', {
         hospitalization_id: hospitalizationId,
         occurred_at: order.prescribed_at,
-        details: { practice_code: practice.code, prescribed_by_id: prescribedBy },
+        details: {
+          practice_code: practice.code,
+          prescribed_by_id: prescribedBy,
+          plan_coverage: check.status,
+          ...(order.coverage_override_reason ? { coverage_override: 'true' } : {}),
+        },
       });
 
       const performedAt = text(body.performed_at);
       if (performedAt) {
-        const charged = chargePractice(db, order, practice, performedAt, decimal(body.unit_price));
+        const charged = chargePractice(
+          db,
+          order,
+          practice,
+          performedAt,
+          decimal(body.unit_price),
+          check,
+        );
         if (isResult(charged)) return charged;
       }
       db.hospitalizationPractices.push(order);
@@ -549,6 +717,14 @@ export function handlePracticeRequest(
         );
       }
       if (order.status !== 'CANCELLED') {
+        const copayment = db.chargeItems.find(
+          (item) => item.id === order.copayment_charge_item_id,
+        );
+        if (copayment && copayment.status === 'ACTIVE') {
+          copayment.status = 'VOID';
+          copayment.voided_at = now();
+          copayment.void_reason = 'Práctica anulada';
+        }
         order.status = 'CANCELLED';
         order.cancelled_at = now();
         if (text(body.reason)) order.notes = text(body.reason);
@@ -582,13 +758,20 @@ export function handlePracticeRequest(
       }
       order.performed_by_id = performedBy;
     }
-    const charged = chargePractice(
+    const performedAt = text(body.performed_at) ?? now();
+    const check = enforceCoverage(
       db,
-      order,
+      hospitalizationId,
       practice,
-      text(body.performed_at) ?? now(),
-      decimal(body.unit_price),
+      performedAt.slice(0, 10),
+      { ...body, authorization_number: body.authorization_number ?? order.authorization_number },
+      order.coverage_override_reason,
     );
+    if (!isCheck(check)) return check;
+    if (text(body.authorization_number)) {
+      order.authorization_number = text(body.authorization_number);
+    }
+    const charged = chargePractice(db, order, practice, performedAt, decimal(body.unit_price), check);
     if (isResult(charged)) return charged;
     saveDB(db);
     return ok(order);

@@ -5,7 +5,8 @@ import type { PatientCreate, PatientRead, PatientUpdate } from '@/api/model';
 import { useAuth } from '@/auth/AuthContext';
 import { PageHeader, Card, Spinner, ErrorState, EmptyState } from '@/components/ui';
 import Modal from '@/components/Modal';
-import { Pencil, Search, Trash2, UserPlus } from 'lucide-react';
+import PatientCoveragesModal from '@/components/coverage/PatientCoveragesModal';
+import { Pencil, Search, ShieldPlus, Trash2, UserPlus } from 'lucide-react';
 
 const DOC_TYPES = ['DNI', 'NIE', 'PASSPORT', 'CIF'];
 
@@ -25,6 +26,7 @@ export default function PatientsPage() {
   const queryClient = useQueryClient();
   const [modalOpen, setModalOpen] = useState(false);
   const [editingPatient, setEditingPatient] = useState<PatientRead | null>(null);
+  const [coveragesOf, setCoveragesOf] = useState<PatientRead | null>(null);
   const [search, setSearch] = useState('');
   const [form, setForm] = useState<PatientForm>(emptyPatientForm);
 
@@ -191,6 +193,13 @@ export default function PatientsPage() {
                       <td className="px-5 py-4">
                         <div className="flex justify-end gap-2">
                           <button
+                            onClick={() => setCoveragesOf(patient)}
+                            className="rounded-lg p-2 text-slate-500 transition-colors hover:bg-teal-50 hover:text-teal-700"
+                            title="Coberturas del paciente"
+                          >
+                            <ShieldPlus className="h-4 w-4" />
+                          </button>
+                          <button
                             onClick={() => openEdit(patient)}
                             disabled={!canManage}
                             className="rounded-lg p-2 text-slate-500 transition-colors hover:bg-teal-50 hover:text-teal-700 disabled:opacity-40"
@@ -298,6 +307,12 @@ export default function PatientsPage() {
           </div>
         </form>
       </Modal>
+
+      <PatientCoveragesModal
+        patient={coveragesOf}
+        open={coveragesOf !== null}
+        onClose={() => setCoveragesOf(null)}
+      />
     </div>
   );
 }

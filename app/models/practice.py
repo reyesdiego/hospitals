@@ -18,6 +18,7 @@ from sqlalchemy import (
     Enum,
     ForeignKey,
     Index,
+    Integer,
     Numeric,
     String,
     Text,
@@ -123,6 +124,11 @@ class MedicalPractice(UUIDMixin, TimestampMixin, Base):
         Boolean, default=False, server_default="false"
     )
     requires_consent: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
+    # Carencia con la que se incorpora la práctica a cualquier plan. Cada plan puede pactar
+    # la suya en :class:`HealthPlanPractice`; esta es la que rige mientras no lo haga.
+    default_waiting_period_days: Mapped[int] = mapped_column(
+        Integer, default=0, server_default="0"
+    )
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, server_default="true")
     valid_from: Mapped[date | None] = mapped_column(Date)
     valid_until: Mapped[date | None] = mapped_column(Date)
@@ -140,6 +146,7 @@ class MedicalPractice(UUIDMixin, TimestampMixin, Base):
         CheckConstraint("anesthesia_units >= 0", name="non_negative_anesthesia_units"),
         CheckConstraint("biochemical_units >= 0", name="non_negative_biochemical_units"),
         CheckConstraint("radiology_units >= 0", name="non_negative_radiology_units"),
+        CheckConstraint("default_waiting_period_days >= 0", name="non_negative_waiting_period"),
         CheckConstraint(
             "valid_until IS NULL OR valid_from IS NULL OR valid_until >= valid_from",
             name="valid_period",
@@ -206,6 +213,62 @@ class MedicalPracticeTariff(UUIDMixin, TimestampMixin, Base):
     )
 
 
+class HealthPlanPractice(UUIDMixin, TimestampMixin, Base):
+    """What a plan covers of a practice: the cartilla of the plan.
+
+    A practice is covered by a plan when it has a row here. ``is_covered`` False keeps the
+    row instead of deleting it, because "this plan does not cover this practice" is an answer
+    the front desk needs, and it is not the same as "nobody loaded it yet".
+    """
+
+    __tablename__ = "health_plan_practices"
+
+    health_plan_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("health_plans.id", ondelete="CASCADE"), index=True
+    )
+    practice_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("medical_practices.id", ondelete="RESTRICT"), index=True
+    )
+    is_covered: Mapped[bool] = mapped_column(Boolean, default=True, server_default="true")
+    # Días que deben pasar desde el alta de la cobertura del afiliado para poder usarla.
+    # Vacío significa que el plan no pactó nada y rige la carencia de la práctica.
+    waiting_period_days: Mapped[int | None] = mapped_column(Integer)
+    copayment_amount: Mapped[Decimal] = mapped_column(
+        Numeric(12, 2), default=Decimal(0), server_default="0"
+    )
+    # Lo que exige el plan, que no es lo mismo que el ``requires_authorization`` del
+    # nomenclador: una práctica sin requisito clínico puede necesitar orden del financiador.
+    requires_authorization: Mapped[bool] = mapped_column(
+        Boolean, default=False, server_default="false"
+    )
+    notes: Mapped[str | None] = mapped_column(Text)
+
+    practice: Mapped[MedicalPractice] = relationship()
+
+    __table_args__ = (
+        UniqueConstraint(
+            "health_plan_id", "practice_id", name="uq_health_plan_practices_plan_practice"
+        ),
+        CheckConstraint(
+            "waiting_period_days IS NULL OR waiting_period_days >= 0",
+            name="non_negative_waiting_period",
+        ),
+        CheckConstraint("copayment_amount >= 0", name="non_negative_copayment"),
+    )
+
+
+class PlanCoverageStatus(str, enum.Enum):
+    """Por qué la cartilla deja pasar (o no) una práctica."""
+
+    NO_COVERAGE = "NO_COVERAGE"  # paciente particular: no hay cobertura
+    NO_PLAN = "NO_PLAN"  # hay cobertura, pero no apunta a un plan del catálogo
+    NO_CARTILLA = "NO_CARTILLA"  # el plan no tiene cartilla cargada todavía
+    NOT_LISTED = "NOT_LISTED"  # hay cartilla y la práctica no está en ella
+    NOT_COVERED = "NOT_COVERED"  # está en la cartilla y el plan la excluye
+    WAITING_PERIOD = "WAITING_PERIOD"  # la carencia todavía no se cumplió
+    COVERED = "COVERED"
+
+
 class PracticeOrderStatus(str, enum.Enum):
     REQUESTED = "REQUESTED"
     PERFORMED = "PERFORMED"
@@ -252,6 +315,23 @@ class HospitalizationPractice(UUIDMixin, TimestampMixin, Base):
         server_default=PracticeOrderStatus.REQUESTED.value,
     )
     quantity: Mapped[Decimal] = mapped_column(Numeric(12, 3), default=Decimal(1), server_default="1")
+    # Lo que dijo la cartilla del plan cuando se registró la práctica. Queda acá porque la
+    # cartilla se edita y la internación no puede cambiar de condiciones a posteriori.
+    authorization_number: Mapped[str | None] = mapped_column(String(100))
+    copayment_amount: Mapped[Decimal] = mapped_column(
+        Numeric(12, 2), default=Decimal(0), server_default="0"
+    )
+    copayment_charge_item_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey(
+            "charge_items.id",
+            ondelete="SET NULL",
+            # El nombre que genera la convención pasa los 63 caracteres de PostgreSQL.
+            name="fk_hosp_practices_copayment_charge_item_id_charge_items",
+        ),
+        unique=True,
+    )
+    # Por qué se registró una práctica que la cartilla no cubre.
+    coverage_override_reason: Mapped[str | None] = mapped_column(Text)
     prescribed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     performed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     cancelled_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
@@ -259,10 +339,16 @@ class HospitalizationPractice(UUIDMixin, TimestampMixin, Base):
     notes: Mapped[str | None] = mapped_column(Text)
 
     practice: Mapped[MedicalPractice] = relationship()
-    charge_item: Mapped[ChargeItem | None] = relationship()
+    charge_item: Mapped[ChargeItem | None] = relationship(
+        foreign_keys=[charge_item_id],
+    )
+    copayment_charge_item: Mapped[ChargeItem | None] = relationship(
+        foreign_keys=[copayment_charge_item_id],
+    )
 
     __table_args__ = (
         CheckConstraint("quantity > 0", name="positive_quantity"),
+        CheckConstraint("copayment_amount >= 0", name="non_negative_copayment"),
         Index(
             "ix_hospitalization_practices_hospitalization_prescribed",
             "hospitalization_id",

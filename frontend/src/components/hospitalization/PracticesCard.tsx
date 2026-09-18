@@ -6,6 +6,7 @@ import type {
   HospitalizationPracticeCreate,
   HospitalizationPracticeRead,
   HospitalizationRead,
+  PlanCoverageCheckRead,
 } from '@/api/model';
 import { invalidateHospitalization } from '@/api/queryKeys';
 import Modal from '@/components/Modal';
@@ -25,7 +26,18 @@ import {
 } from '@/config/workflowLabels';
 import { apiErrorMessage } from '@/utils/api-error';
 import { formatDateTime } from '@/utils/format';
-import { Ban, CheckCircle2, ClipboardList, Plus } from 'lucide-react';
+import { Ban, CheckCircle2, ClipboardList, Plus, ShieldAlert, ShieldCheck } from 'lucide-react';
+
+/** Cómo se lee cada respuesta de la cartilla del plan. */
+const COVERAGE_LABELS: Record<PlanCoverageCheckRead['status'], string> = {
+  NO_COVERAGE: 'Paciente particular: no hay cartilla que aplicar.',
+  NO_PLAN: 'La cobertura no esta vinculada a un plan del catalogo.',
+  NO_CARTILLA: 'El plan no tiene cartilla cargada: no se aplican restricciones.',
+  NOT_LISTED: 'La practica no esta en la cartilla del plan.',
+  NOT_COVERED: 'El plan no cubre esta practica.',
+  WAITING_PERIOD: 'La practica esta en carencia.',
+  COVERED: 'Cubierta por el plan.',
+};
 
 /** Mientras la internación está abierta se pueden indicar y realizar prácticas. */
 const OPEN_STATUSES = [
@@ -44,6 +56,9 @@ type PracticeForm = {
   performed_at: string;
   unit_price: string;
   indication: string;
+  authorization_number: string;
+  override: boolean;
+  override_reason: string;
 };
 
 const emptyForm: PracticeForm = {
@@ -55,6 +70,9 @@ const emptyForm: PracticeForm = {
   performed_at: '',
   unit_price: '',
   indication: '',
+  authorization_number: '',
+  override: false,
+  override_reason: '',
 };
 
 /** El input ``datetime-local`` no lleva zona; se envía el instante local como ISO. */
@@ -90,6 +108,20 @@ export function PracticesCard({
   const professionalsQuery = useQuery({
     queryKey: ['professionals'],
     queryFn: () => defaultApi.listProfessionalsApiV1ProfessionalsGet(),
+  });
+  // Lo que dice la cartilla del plan sobre la practica elegida, antes de indicarla.
+  const coverageQuery = useQuery({
+    queryKey: ['practice-coverage-check', hosp.id, form.practice_id, form.performed_at],
+    queryFn: () =>
+      api.checkPracticeCoverageApiV1HospitalizationsHospitalizationIdPracticesCoverageCheckGet(
+        hosp.id,
+        {
+          practice_id: form.practice_id,
+          on: form.performed_at ? form.performed_at.slice(0, 10) : undefined,
+        },
+      ),
+    enabled: open && form.practice_id !== '',
+    retry: false,
   });
 
   const closeModal = () => {
@@ -155,11 +187,15 @@ export function PracticesCard({
       performed_at: performedAt,
       unit_price: form.unit_price.trim() === '' ? null : form.unit_price.trim(),
       indication: form.indication.trim() || null,
+      authorization_number: form.authorization_number.trim() || null,
+      override_coverage_rules: form.override,
+      override_reason: form.override ? form.override_reason.trim() || null : null,
     });
   };
 
   const practices = practicesQuery.data ?? [];
   const professionals = professionalsQuery.data ?? [];
+  const coverage = form.practice_id ? coverageQuery.data : undefined;
   const professionalName = (id: string | null) => {
     if (!id) return null;
     const professional = professionals.find((item) => item.id === id);
@@ -215,6 +251,21 @@ export function PracticesCard({
                   )}
                   {practice.indication && (
                     <p className="mt-1 text-xs italic text-slate-500">{practice.indication}</p>
+                  )}
+                  {Number(practice.copayment_amount) > 0 && (
+                    <p className="text-xs text-slate-500">
+                      Copago del plan {money(practice.copayment_amount)} por practica
+                    </p>
+                  )}
+                  {practice.authorization_number && (
+                    <p className="text-xs text-slate-500">
+                      Autorizacion {practice.authorization_number}
+                    </p>
+                  )}
+                  {practice.coverage_override_reason && (
+                    <p className="mt-1 text-xs font-medium text-amber-600">
+                      Fuera de cartilla: {practice.coverage_override_reason}
+                    </p>
                   )}
                 </div>
                 <div className="flex flex-col items-end gap-2">
@@ -297,6 +348,80 @@ export function PracticesCard({
               ))}
             </select>
           </Field>
+
+          {coverage && (
+            <div
+              className={`rounded-lg px-4 py-3 text-xs ${
+                coverage.blocked
+                  ? 'bg-red-50 text-red-700'
+                  : coverage.status === 'COVERED' && !coverage.message
+                    ? 'bg-emerald-50 text-emerald-700'
+                    : coverage.message
+                      ? 'bg-amber-50 text-amber-800'
+                      : 'bg-slate-50 text-slate-500'
+              }`}
+            >
+              <p className="flex items-center gap-1.5 font-semibold">
+                {coverage.blocked ? (
+                  <ShieldAlert className="h-4 w-4" />
+                ) : (
+                  <ShieldCheck className="h-4 w-4" />
+                )}
+                {coverage.message ?? COVERAGE_LABELS[coverage.status]}
+              </p>
+              {(Number(coverage.copayment_amount) > 0 ||
+                coverage.requires_authorization ||
+                coverage.waiting_period_days > 0) && (
+                <p className="mt-1">
+                  {coverage.waiting_period_days > 0 &&
+                    `Carencia de ${coverage.waiting_period_days} dias` +
+                      (coverage.available_from ? ` (cumplida el ${coverage.available_from})` : '') +
+                      '. '}
+                  {Number(coverage.copayment_amount) > 0 &&
+                    `Copago de ${money(coverage.copayment_amount)} por practica. `}
+                  {coverage.requires_authorization && 'Requiere autorizacion del financiador.'}
+                </p>
+              )}
+            </div>
+          )}
+
+          {coverage?.requires_authorization && (
+            <Field label="Numero de autorizacion del financiador">
+              <input
+                type="text"
+                value={form.authorization_number}
+                onChange={(event) =>
+                  setForm({ ...form, authorization_number: event.target.value })
+                }
+                placeholder="El que dio el financiador"
+                className={inputClass}
+              />
+            </Field>
+          )}
+
+          {coverage?.blocked && (
+            <div className="space-y-2 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3">
+              <label className="flex items-center gap-2 text-sm font-medium text-amber-800">
+                <input
+                  type="checkbox"
+                  checked={form.override}
+                  onChange={(event) => setForm({ ...form, override: event.target.checked })}
+                  className="h-4 w-4 rounded border-amber-300"
+                />
+                Registrar igual, fuera de la cartilla
+              </label>
+              {form.override && (
+                <input
+                  type="text"
+                  required
+                  value={form.override_reason}
+                  onChange={(event) => setForm({ ...form, override_reason: event.target.value })}
+                  placeholder="Motivo (queda asentado en la internacion)"
+                  className={inputClass}
+                />
+              )}
+            </div>
+          )}
 
           <Field label="Recetada por">
             <select
