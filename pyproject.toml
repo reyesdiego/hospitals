@@ -16,6 +16,9 @@ dev = ["pytest>=8.3,<9", "httpx>=0.28,<1", "ruff>=0.11,<1"]
 [tool.setuptools.packages.find]
 include = ["app*"]
 
+[tool.setuptools.package-data]
+"app.db.seeds" = ["*.csv"]
+
 [tool.ruff]
 line-length = 100
 target-version = "py312"

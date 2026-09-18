@@ -1,4 +1,4 @@
-.PHONY: db-up db-down install run migrate migration test lint
+.PHONY: db-up db-down install run migrate migration seed-practices test lint
 
 db-up:
 	docker compose up -d postgres
@@ -17,6 +17,9 @@ migrate:
 
 migration:
 	alembic revision --autogenerate -m "$(m)"
+
+seed-practices:
+	python -m app.db.seeds.practices $(ARGS)
 
 test:
 	pytest
