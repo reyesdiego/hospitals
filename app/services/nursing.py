@@ -18,7 +18,11 @@ from app.core.config import settings
 from app.core.exceptions import DomainError
 from app.core.users import STAFF, RequestUser
 from app.models.bed import Bed, BedAssignment
-from app.models.hospitalization import Hospitalization, HospitalizationStatus
+from app.models.hospitalization import (
+    Hospitalization,
+    HospitalizationServiceAssignment,
+    HospitalizationStatus,
+)
 from app.models.patient import Patient
 from app.models.practice import (
     HospitalizationPractice,
@@ -27,6 +31,7 @@ from app.models.practice import (
 )
 from app.models.professional import Professional
 from app.models.room import Room
+from app.models.service import Service
 from app.schemas.practice import (
     HospitalizationPracticeCancelCreate,
     HospitalizationPracticePerformCreate,
@@ -53,6 +58,12 @@ class NursingTask:
     bed_code: str | None
     room_code: str | None
     ward: str | None
+    service_id: uuid.UUID | None
+    service_name: str | None
+
+
+#: Tope del historial: sin él, una búsqueda sin filtros trae la internación entera del hospital.
+HISTORY_LIMIT = 300
 
 
 class NursingTaskService:
@@ -66,17 +77,29 @@ class NursingTaskService:
         *,
         pending_only: bool = True,
         hospitalization_id: uuid.UUID | None = None,
+        patient_id: uuid.UUID | None = None,
+        service_id: uuid.UUID | None = None,
         ward: str | None = None,
         on: date | None = None,
     ) -> list[NursingTask]:
-        """Tareas de enfermería de las internaciones activas.
+        """Tareas de enfermería, filtradas como se las busca en la práctica.
 
-        Por defecto solo las pendientes, que es lo que hay que hacer ahora. ``on`` limita las
-        ya resueltas a un día, para revisar lo hecho en el turno sin arrastrar el historial.
+        Pendientes es lo que hay que hacer ahora, y solo tiene sentido en internaciones
+        activas. Sin ``pending_only`` se está mirando hacia atrás —el turno, un día, un
+        paciente— y ahí entran también las internaciones ya cerradas, que es donde queda lo
+        que se le hizo a alguien que ya se fue de alta.
         """
 
         stmt = (
-            select(HospitalizationPractice, Patient, Hospitalization, Bed, Room)
+            select(
+                HospitalizationPractice,
+                Patient,
+                Hospitalization,
+                Bed,
+                Room,
+                Service.id,
+                Service.name,
+            )
             .join(
                 MedicalPractice,
                 MedicalPractice.id == HospitalizationPractice.practice_id,
@@ -94,22 +117,37 @@ class NursingTaskService:
             )
             .outerjoin(Bed, Bed.id == BedAssignment.bed_id)
             .outerjoin(Room, Room.id == Bed.room_id)
-            .where(
-                MedicalPractice.is_nursing_task.is_(True),
-                Hospitalization.status.in_(ACTIVE_STATUSES),
+            # El servicio responsable es el que tiene la internación ahora.
+            .outerjoin(
+                HospitalizationServiceAssignment,
+                (HospitalizationServiceAssignment.hospitalization_id == Hospitalization.id)
+                & (HospitalizationServiceAssignment.ended_at.is_(None)),
             )
-            .order_by(HospitalizationPractice.prescribed_at)
+            .outerjoin(Service, Service.id == HospitalizationServiceAssignment.service_id)
+            .where(MedicalPractice.is_nursing_task.is_(True))
         )
         if pending_only:
-            stmt = stmt.where(HospitalizationPractice.status == PracticeOrderStatus.REQUESTED)
+            stmt = stmt.where(
+                HospitalizationPractice.status == PracticeOrderStatus.REQUESTED,
+                Hospitalization.status.in_(ACTIVE_STATUSES),
+            ).order_by(HospitalizationPractice.prescribed_at)
+        else:
+            # Mirando hacia atrás, lo último primero.
+            stmt = stmt.order_by(HospitalizationPractice.prescribed_at.desc()).limit(
+                HISTORY_LIMIT
+            )
         if hospitalization_id:
             stmt = stmt.where(HospitalizationPractice.hospitalization_id == hospitalization_id)
+        if patient_id:
+            stmt = stmt.where(Hospitalization.patient_id == patient_id)
+        if service_id:
+            stmt = stmt.where(HospitalizationServiceAssignment.service_id == service_id)
         if ward:
             stmt = stmt.where(Bed.ward == ward)
 
         rows = (await self.session.execute(stmt)).all()
         tasks: list[NursingTask] = []
-        for order, patient, hospitalization, bed, room in rows:
+        for order, patient, hospitalization, bed, room, service_id_row, service_name in rows:
             if on and not _happened_on(order, on):
                 continue
             prescribed_by = await self.session.get(Professional, order.prescribed_by_id)
@@ -122,6 +160,8 @@ class NursingTaskService:
                     bed_code=bed.code if bed else None,
                     room_code=room.code if room else None,
                     ward=bed.ward if bed else None,
+                    service_id=service_id_row,
+                    service_name=service_name,
                 )
             )
         return tasks

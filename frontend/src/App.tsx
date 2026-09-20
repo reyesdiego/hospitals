@@ -20,13 +20,6 @@ import UsersPage from '@/pages/UsersPage';
 import HospitalizationsPage from '@/pages/HospitalizationsPage';
 import HospitalizationDetailPage from '@/pages/HospitalizationDetailPage';
 import AdmissionPanelPage from '@/pages/AdmissionPanelPage';
-import { initMockAdapter } from '@/api/mock-adapter';
-
-// The adapter has to replace axios before the first query runs, so it is installed at
-// module load instead of inside an effect.
-if (import.meta.env.VITE_USE_MOCK_API === 'true') {
-  initMockAdapter();
-}
 
 const queryClient = new QueryClient({
   defaultOptions: {

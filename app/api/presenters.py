@@ -145,6 +145,8 @@ def nursing_task_read(task: NursingTask) -> NursingTaskRead:
         ward=task.ward,
         room_code=task.room_code,
         bed_code=task.bed_code,
+        service_id=task.service_id,
+        service_name=task.service_name,
         prescribed_by=(
             f"{prescriber.last_name}, {prescriber.first_name}" if prescriber else None
         ),

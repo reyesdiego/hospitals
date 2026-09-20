@@ -280,6 +280,8 @@ class NursingTaskRead(BaseModel):
     ward: str | None
     room_code: str | None
     bed_code: str | None
+    service_id: uuid.UUID | None
+    service_name: str | None
     prescribed_by: str | None
     prescribed_at: datetime
     performed_at: datetime | None

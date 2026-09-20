@@ -20,10 +20,13 @@ type SecondParameter<T extends (...args: never) => unknown> = Parameters<T>[1];
 
   export const getNursing = () => {
 /**
- * Lo que el médico indicó y enfermería todavía tiene que hacer.
+ * Lo que el médico indicó y enfermería tiene que hacer, o ya hizo.
  *
- * ``pending_only=false`` con ``on`` muestra además lo aplicado o cancelado ese día, que es
- * lo que se revisa al cerrar un turno.
+ * - Sin parámetros: lo pendiente de las internaciones activas.
+ * - ``pending_only=false`` con ``on``: lo de ese día, para cerrar el turno.
+ * - ``pending_only=false`` sin ``on``: el historial, que incluye internaciones cerradas.
+ *
+ * ``patient_id`` y ``service_id`` acotan por paciente y por servicio responsable.
  * @summary List Nursing Tasks
  */
 const listNursingTasksApiV1NursingTasksGet = (

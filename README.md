@@ -67,8 +67,7 @@ Ejecuta este flujo cada vez que cambies rutas, schemas o responses de FastAPI.
 
 ```bash
 cd frontend
-npm run dev                          # contra la API real (http://localhost:8000)
-VITE_USE_MOCK_API=true npm run dev   # con el adaptador mock, sin backend
+npm run dev   # contra la API en http://localhost:8000
 ```
 
 - `src/pages/HospitalizationDetailPage.tsx` orquesta el ciclo de la internación con las
@@ -82,9 +81,6 @@ VITE_USE_MOCK_API=true npm run dev   # con el adaptador mock, sin backend
   permite anularlos indicando el motivo.
 - `src/pages/BedsPage.tsx` es el tablero de camas: ocupación, reserva con vencimiento,
   limpieza, estado operativo e historial de estados.
-- El adaptador mock (`src/api/mock-db.ts` + `src/api/mock-workflow.ts` +
-  `src/api/mock-practices.ts`) replica las reglas del backend, incluidos los conflictos
-  409, para poder trabajar sin base de datos.
 
 ## Módulos
 
@@ -169,6 +165,21 @@ y la cama.
 
 Por este camino solo pasan prácticas marcadas como de enfermería; el resto se registra desde
 la internación, que es donde está quien las hace.
+
+## Indicaciones del alta
+
+Al dar el alta médica el profesional escribe lo que el paciente se lleva: medicación
+(`MEDICATION`, texto libre porque el vademécum no vive acá) y prácticas para hacerse
+(`PRACTICE`, elegidas del nomenclador o escritas a mano), en
+`/hospitalizations/{id}/discharge-prescriptions`.
+
+`GET .../discharge-prescriptions/pdf` devuelve el documento para imprimir: dos hojas, la
+receta y la indicación de prácticas, cada una con paciente, cobertura, profesional que firma
+y fecha de alta.
+
+Son la excepción al candado posterior al alta médica: se escriben justamente en ese momento,
+así que se pueden cargar y corregir hasta el egreso administrativo, cuando la internación
+queda cerrada.
 
 ## Flujo de internación
 

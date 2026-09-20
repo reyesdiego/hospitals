@@ -10,6 +10,7 @@ import pytest
 from app.core.exceptions import DomainError
 from app.core.permissions import Permission, UserRole, permissions_of
 from app.core.users import RequestUser
+from app.models.hospitalization import Hospitalization, HospitalizationStatus
 from app.models.practice import (
     Nomenclador,
     PracticeChapter,
@@ -25,6 +26,7 @@ from app.schemas.practice import (
 )
 from app.services.account import AccountService
 from app.services.bed_assignment import BedAssignmentService
+from app.services.hospitalization import HospitalizationService
 from app.services.nursing import NursingTaskService, today_local
 from app.services.practice import HospitalizationPracticeService, MedicalPracticeService
 from tests.conftest import requires_postgres, run_db
@@ -309,3 +311,93 @@ def test_the_worklist_shows_who_applied_each_task():
             return [task.order.performed_by_user_name for task in tasks]
 
     assert run_db(case) == ["Enf. Perez"]
+
+
+async def discharge(factory, hospitalization_id, scenario):
+    from app.schemas.workflow import ClinicalDischargeCreate
+
+    async with factory() as session:
+        await HospitalizationService(session).clinical_discharge(
+            hospitalization_id,
+            ClinicalDischargeCreate(
+                discharge_reason="Alta", ordered_by_practitioner_id=scenario.practitioner_id
+            ),
+        )
+
+
+def test_the_history_reaches_hospitalizations_that_are_already_closed():
+    """Lo pendiente es de los internados; el historial es de cualquiera."""
+
+    async def case(factory):
+        async with factory() as setup:
+            scenario = await build_scenario(setup)
+        hospitalization_id = await admitted(factory, scenario)
+        async with factory() as session:
+            practice = await catalog_practice(
+                session, code="19.02.01", name="Medicacion oral", nursing=True
+            )
+            practice_id = practice.id
+        order_id = await prescribe(factory, hospitalization_id, scenario, practice_id)
+        async with factory() as session:
+            await NursingTaskService(session, NURSE).perform(
+                order_id, HospitalizationPracticePerformCreate()
+            )
+        async with factory() as session:
+            hospitalization = await session.get(Hospitalization, hospitalization_id)
+            hospitalization.status = HospitalizationStatus.CLOSED
+            await session.commit()
+        async with factory() as session:
+            service = NursingTaskService(session)
+            pending = await service.worklist()
+            history = await service.worklist(pending_only=False)
+            return len(pending), [task.order.practice_code for task in history]
+
+    pending, history = run_db(case)
+    assert pending == 0
+    assert history == ["19.02.01"]
+
+
+def test_the_worklist_is_filtered_by_patient_and_by_service():
+    async def case(factory):
+        async with factory() as setup:
+            scenario = await build_scenario(setup)
+        # Dos internaciones: la admisión ya deja a cada una con su servicio responsable.
+        first = await admitted(factory, scenario)
+        async with factory() as session:
+            other = await hospitalization_from_admission(
+                session,
+                scenario,
+                patient_id=scenario.other_patient_id,
+                requesting_service_id=scenario.other_service_id,
+            )
+        async with factory() as session:
+            practice = await catalog_practice(
+                session, code="19.05.01", name="Via periferica", nursing=True
+            )
+            practice_id = practice.id
+        await prescribe(factory, first, scenario, practice_id)
+        await prescribe(factory, other, scenario, practice_id)
+        async with factory() as session:
+            service = NursingTaskService(session)
+            everything = await service.worklist()
+            one_patient = await service.worklist(patient_id=scenario.patient_id)
+            one_service = await service.worklist(service_id=scenario.service_id)
+            other_service = await service.worklist(service_id=scenario.other_service_id)
+            return (
+                len(everything),
+                [task.patient.id == scenario.patient_id for task in one_patient],
+                [task.hospitalization.id == first for task in one_service],
+                [task.hospitalization.id == other for task in other_service],
+            )
+
+    everything, one_patient, one_service, other_service = run_db(case)
+    assert everything == 2
+    assert one_patient == [True]
+    assert one_service == [True]
+    assert other_service == [True]
+
+
+def test_the_history_is_capped_so_a_search_without_filters_stays_usable():
+    from app.services.nursing import HISTORY_LIMIT
+
+    assert HISTORY_LIMIT > 0

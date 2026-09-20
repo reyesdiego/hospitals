@@ -8,6 +8,8 @@
 export type ListNursingTasksApiV1NursingTasksGetParams = {
 pending_only?: boolean;
 hospitalization_id?: string | null;
+patient_id?: string | null;
+service_id?: string | null;
 ward?: string | null;
 on?: string | null;
 };

@@ -23,6 +23,8 @@ export interface NursingTaskRead {
   ward: string | null;
   room_code: string | null;
   bed_code: string | null;
+  service_id: string | null;
+  service_name: string | null;
   prescribed_by: string | null;
   prescribed_at: string;
   performed_at: string | null;

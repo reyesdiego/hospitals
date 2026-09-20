@@ -71,6 +71,19 @@ WRITE_PERMISSIONS: dict[tuple[str, str], Permission] = {
     # ------------------------------------------------------ tareas de enfermería
     ("POST", "/nursing-tasks/{order_id}/perform"): Permission.NURSING_TASKS,
     ("POST", "/nursing-tasks/{order_id}/cancel"): Permission.NURSING_TASKS,
+    # Recetas e indicaciones del alta: las escribe quien conduce la internación.
+    (
+        "POST",
+        "/hospitalizations/{hospitalization_id}/discharge-prescriptions",
+    ): Permission.HOSPITALIZATION,
+    (
+        "PUT",
+        "/hospitalizations/{hospitalization_id}/discharge-prescriptions/{prescription_id}",
+    ): Permission.HOSPITALIZATION,
+    (
+        "DELETE",
+        "/hospitalizations/{hospitalization_id}/discharge-prescriptions/{prescription_id}",
+    ): Permission.HOSPITALIZATION,
     # --------------------------------------------------------- limpieza de camas
     ("POST", "/beds/{bed_id}/cleaning/start"): Permission.BED_CLEANING,
     ("POST", "/beds/{bed_id}/cleaning/complete"): Permission.BED_CLEANING,

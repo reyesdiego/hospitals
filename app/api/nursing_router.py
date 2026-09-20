@@ -23,18 +23,25 @@ async def list_nursing_tasks(
     session: DbSession,
     pending_only: bool = True,
     hospitalization_id: uuid.UUID | None = None,
+    patient_id: uuid.UUID | None = None,
+    service_id: uuid.UUID | None = None,
     ward: str | None = None,
     on: date | None = None,
 ):
-    """Lo que el médico indicó y enfermería todavía tiene que hacer.
+    """Lo que el médico indicó y enfermería tiene que hacer, o ya hizo.
 
-    ``pending_only=false`` con ``on`` muestra además lo aplicado o cancelado ese día, que es
-    lo que se revisa al cerrar un turno.
+    - Sin parámetros: lo pendiente de las internaciones activas.
+    - ``pending_only=false`` con ``on``: lo de ese día, para cerrar el turno.
+    - ``pending_only=false`` sin ``on``: el historial, que incluye internaciones cerradas.
+
+    ``patient_id`` y ``service_id`` acotan por paciente y por servicio responsable.
     """
 
     tasks = await NursingTaskService(session).worklist(
         pending_only=pending_only,
         hospitalization_id=hospitalization_id,
+        patient_id=patient_id,
+        service_id=service_id,
         ward=ward,
         on=on,
     )

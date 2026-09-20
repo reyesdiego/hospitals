@@ -56,6 +56,7 @@ from app.models.practice import (
     PracticeSetting,
     PracticeType,
 )
+from app.models.prescription import DischargePrescription, PrescriptionKind
 from app.models.professional import Professional, ProfessionalSpecialty, Specialty
 from app.models.room import Room, RoomStatus
 from app.models.service import Service
@@ -92,6 +93,7 @@ __all__ = [
     "DischargeDestination",
     "DischargePlan",
     "DischargePlanStatus",
+    "DischargePrescription",
     "DischargeType",
     "Episode",
     "EpisodeStatus",
@@ -118,6 +120,7 @@ __all__ = [
     "PracticeOrderStatus",
     "PracticeSetting",
     "PracticeType",
+    "PrescriptionKind",
     "Professional",
     "ProfessionalSpecialty",
     "Room",
