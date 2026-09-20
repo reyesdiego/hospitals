@@ -1,16 +1,18 @@
 import uuid
 
-from fastapi import APIRouter, Response, status
+from fastapi import APIRouter, Depends, Response, status
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import selectinload
 
 from app.api.admission_router import router as admission_router
+from app.api.auth_router import router as auth_router
 from app.api.bed_router import router as bed_router
-from app.api.dependencies import DbSession
+from app.api.dependencies import DbSession, enforce_permissions
 from app.api.hospitalization_router import router as hospitalization_router
+from app.api.nursing_router import router as nursing_router
 from app.api.practice_router import router as practice_router
-from app.api.presenters import bed_read
+from app.api.presenters import bed_read, room_read
 from app.api.registry_router import router as registry_router
 from app.core.exceptions import DomainError
 from app.models.admission import (
@@ -69,7 +71,7 @@ from app.services.admission import AdmissionWorkflowService
 from app.services.bed_assignment import BedAssignmentService
 from app.services.bed_status import BedStatusService
 from app.services.hospitalization import HospitalizationService
-from app.services.room import RoomService
+from app.services.room import RoomService, occupancy_by_room
 
 router = APIRouter()
 
@@ -453,17 +455,25 @@ async def set_bed_status(bed_id: uuid.UUID, payload: BedStatusCreate, session: D
 
 @router.get("/rooms", response_model=list[RoomRead])
 async def list_rooms(session: DbSession):
-    return list((await session.scalars(select(Room).order_by(Room.ward, Room.code))).all())
+    """El estado de cada habitación sale de sus camas: una habitación con su única cama en
+    limpieza no está disponible."""
+
+    rooms = list((await session.scalars(select(Room).order_by(Room.ward, Room.code))).all())
+    by_room = await occupancy_by_room(session)
+    return [room_read(room, by_room.get(room.id, [])) for room in rooms]
 
 
 @router.post("/rooms", response_model=RoomRead, status_code=201)
 async def create_room(payload: RoomCreate, session: DbSession):
-    return await RoomService(session).create_room(payload)
+    room = await RoomService(session).create_room(payload)
+    return room_read(room, [])
 
 
 @router.put("/rooms/{room_id}", response_model=RoomRead)
 async def update_room(room_id: uuid.UUID, payload: RoomUpdate, session: DbSession):
-    return await RoomService(session).update_room(room_id, payload)
+    room = await RoomService(session).update_room(room_id, payload)
+    by_room = await occupancy_by_room(session, [room.id])
+    return room_read(room, by_room.get(room.id, []))
 
 
 @router.delete("/rooms/{room_id}", status_code=status.HTTP_204_NO_CONTENT)
@@ -659,9 +669,13 @@ async def list_bed_transfers(hospitalization_id: uuid.UUID, session: DbSession):
 
 
 api_router = APIRouter()
-api_router.include_router(router)
-api_router.include_router(registry_router)
-api_router.include_router(admission_router)
-api_router.include_router(hospitalization_router)
-api_router.include_router(bed_router)
-api_router.include_router(practice_router)
+# El router de sesión maneja su propio acceso; el resto pasa por la tabla de permisos.
+api_router.include_router(auth_router)
+protected = [Depends(enforce_permissions)]
+api_router.include_router(router, dependencies=protected)
+api_router.include_router(registry_router, dependencies=protected)
+api_router.include_router(admission_router, dependencies=protected)
+api_router.include_router(hospitalization_router, dependencies=protected)
+api_router.include_router(bed_router, dependencies=protected)
+api_router.include_router(practice_router, dependencies=protected)
+api_router.include_router(nursing_router, dependencies=protected)

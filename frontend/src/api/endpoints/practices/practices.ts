@@ -175,6 +175,8 @@ const listHospitalizationPracticesApiV1HospitalizationsHospitalizationIdPractice
   /**
  * Registra una práctica y el profesional que la indicó. Si se informa
  * ``performed_at`` queda como realizada y se carga a la cuenta de la internación.
+ *
+ * Con el alta médica dada la internación no recibe más cambios, salvo de un administrador.
  * @summary Register Hospitalization Practice
  */
 const registerHospitalizationPracticeApiV1HospitalizationsHospitalizationIdPracticesPost = (

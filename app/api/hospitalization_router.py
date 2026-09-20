@@ -5,7 +5,7 @@ import uuid
 
 from fastapi import APIRouter
 
-from app.api.dependencies import DbSession
+from app.api.dependencies import CurrentUser, DbSession
 from app.api.presenters import account_read
 from app.schemas.domain import AdministrativeDischargeCreate, HospitalizationRead
 from app.schemas.workflow import (
@@ -196,8 +196,11 @@ async def add_charge_item(
     hospitalization_id: uuid.UUID,
     payload: ChargeItemCreate,
     session: DbSession,
+    user: CurrentUser,
 ):
-    return await AccountService(session).add_charge_item(hospitalization_id, payload)
+    """Con el alta médica dada la cuenta no recibe más cargos, salvo de un administrador."""
+
+    return await AccountService(session, user).add_charge_item(hospitalization_id, payload)
 
 
 @router.post(
@@ -209,10 +212,11 @@ async def void_charge_item(
     charge_item_id: uuid.UUID,
     payload: ChargeItemVoidCreate,
     session: DbSession,
+    user: CurrentUser,
 ):
     """Anula un cargo de la cuenta. El cargo queda registrado y deja de sumar al total."""
 
-    return await AccountService(session).void_charge_item(
+    return await AccountService(session, user).void_charge_item(
         hospitalization_id,
         charge_item_id,
         payload,

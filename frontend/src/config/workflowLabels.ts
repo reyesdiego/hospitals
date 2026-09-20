@@ -92,6 +92,7 @@ export const EVENT_TYPE_LABELS: Record<HospitalizationEventType, string> = {
   ACCOUNT_READY_FOR_REVIEW: 'Cuenta lista para auditoria',
   HOSPITALIZATION_CLOSED: 'Internacion cerrada',
   HOSPITALIZATION_CANCELLED: 'Internacion cancelada',
+  POST_DISCHARGE_CHANGE: 'Cambio posterior al alta medica',
 };
 
 export const ADMISSION_ORIGIN_LABELS: Record<AdmissionOrigin, string> = {

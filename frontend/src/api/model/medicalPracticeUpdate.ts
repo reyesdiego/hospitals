@@ -32,6 +32,7 @@ export interface MedicalPracticeUpdate {
   radiology_units?: number | string;
   requires_authorization?: boolean;
   requires_consent?: boolean;
+  is_nursing_task?: boolean;
   /**
      * @minimum 0
      * @maximum 3650

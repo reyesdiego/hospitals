@@ -212,6 +212,7 @@ const getAccountApiV1HospitalizationsHospitalizationIdAccountGet = (
       options);
     }
   /**
+ * Con el alta médica dada la cuenta no recibe más cargos, salvo de un administrador.
  * @summary Add Charge Item
  */
 const addChargeItemApiV1HospitalizationsHospitalizationIdAccountChargeItemsPost = (

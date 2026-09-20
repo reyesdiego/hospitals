@@ -15,6 +15,8 @@ export interface HospitalizationPracticeRead {
   practice_name: string;
   prescribed_by_id: string;
   performed_by_id: string | null;
+  performed_by_user_id: string | null;
+  performed_by_user_name: string | null;
   service_id: string | null;
   charge_item_id: string | null;
   status: PracticeOrderStatus;

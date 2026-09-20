@@ -21,7 +21,7 @@ const emptyPatientForm: PatientForm = {
 };
 
 export default function PatientsPage() {
-  const { user } = useAuth();
+  const { can } = useAuth();
   const api = getDefault();
   const queryClient = useQueryClient();
   const [modalOpen, setModalOpen] = useState(false);
@@ -30,7 +30,7 @@ export default function PatientsPage() {
   const [search, setSearch] = useState('');
   const [form, setForm] = useState<PatientForm>(emptyPatientForm);
 
-  const canManage = Boolean(user && ['admin', 'doctor', 'nurse', 'receptionist'].includes(user.role));
+  const canManage = can('ADMISSION');
 
   const patientsQuery = useQuery({
     queryKey: ['patients'],

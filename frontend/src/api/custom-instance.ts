@@ -9,8 +9,15 @@ export const axiosInstance: AxiosInstance = Axios.create({
   },
 });
 
+const TOKEN_KEY = 'hosp_auth_token';
+
+export const getToken = (): string | null => localStorage.getItem(TOKEN_KEY);
+export const setToken = (token: string) => localStorage.setItem(TOKEN_KEY, token);
+export const clearToken = () => localStorage.removeItem(TOKEN_KEY);
+
+// El token de sesion es lo unico que se manda: el rol y los permisos los resuelve la API.
 axiosInstance.interceptors.request.use((config) => {
-  const token = localStorage.getItem('hosp_auth_token');
+  const token = getToken();
   if (token) {
     config.headers.Authorization = `Bearer ${token}`;
   }

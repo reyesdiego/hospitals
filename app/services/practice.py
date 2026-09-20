@@ -9,6 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.core.exceptions import DomainError, integrity_conflict
+from app.core.users import STAFF, RequestUser
 from app.models.account import ChargeCategory, ChargeItem, ChargeItemStatus
 from app.models.audit import HospitalizationEventType
 from app.models.coverage import HealthPlan, PatientCoverage, Payer
@@ -34,6 +35,7 @@ from app.schemas.practice import (
     MedicalPracticeTariffUpdate,
     MedicalPracticeUpdate,
 )
+from app.services.access import require_editable
 from app.services.account import add_charge, require_open_account
 from app.services.audit import record_event
 from app.services.plan_coverage import PlanCoverageCheck, evaluate_coverage
@@ -324,8 +326,9 @@ OPEN_HOSPITALIZATION_STATUSES = {
 class HospitalizationPracticeService:
     """Practices indicated during a hospitalization, and the charges they generate."""
 
-    def __init__(self, session: AsyncSession):
+    def __init__(self, session: AsyncSession, user: RequestUser = STAFF):
         self.session = session
+        self.user = user
 
     async def list_for_hospitalization(
         self,
@@ -353,6 +356,9 @@ class HospitalizationPracticeService:
     ) -> HospitalizationPractice:
         async with self.session.begin():
             hospitalization = await self._require_open_hospitalization(hospitalization_id)
+            require_editable(
+                self.session, hospitalization, self.user, action="Indicar una práctica"
+            )
             practice = await self._require_active_practice(payload.practice_id)
             await self._require_professional(payload.prescribed_by_id, "prescriptor")
             if payload.performed_by_id:
@@ -428,6 +434,9 @@ class HospitalizationPracticeService:
     ) -> HospitalizationPractice:
         async with self.session.begin():
             hospitalization = await self._require_open_hospitalization(hospitalization_id)
+            require_editable(
+                self.session, hospitalization, self.user, action="Registrar una práctica realizada"
+            )
             order = await self._require_order(hospitalization_id, order_id)
             if order.status == PracticeOrderStatus.PERFORMED and not await self._charge_is_void(
                 order
@@ -485,6 +494,9 @@ class HospitalizationPracticeService:
     ) -> HospitalizationPractice:
         async with self.session.begin():
             hospitalization = await self._require_hospitalization(hospitalization_id)
+            require_editable(
+                self.session, hospitalization, self.user, action="Anular una práctica"
+            )
             order = await self._require_order(hospitalization_id, order_id)
             if order.status == PracticeOrderStatus.PERFORMED and not await self._charge_is_void(
                 order
@@ -573,6 +585,10 @@ class HospitalizationPracticeService:
         order.status = PracticeOrderStatus.PERFORMED
         order.performed_at = performed_at
         order.performed_by_id = performed_by_id
+        # Quién la aplicó desde el sistema: en las tareas de enfermería es la única forma
+        # de saber quién estuvo con el paciente.
+        order.performed_by_user_id = self.user.id
+        order.performed_by_user_name = self.user.name or recorded_by
         order.charge_item_id = item.id
         order.copayment_amount = check.copayment_amount
         order.copayment_charge_item_id = copayment_item.id if copayment_item else None

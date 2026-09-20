@@ -9,6 +9,8 @@ import type {
   PlanCoverageCheckRead,
 } from '@/api/model';
 import { invalidateHospitalization } from '@/api/queryKeys';
+import { useAuth } from '@/auth/AuthContext';
+import { isPostDischarge } from './lock';
 import Modal from '@/components/Modal';
 import {
   ActionButton,
@@ -89,6 +91,7 @@ export function PracticesCard({
 }) {
   const api = getPractices();
   const defaultApi = getDefault();
+  const { user } = useAuth();
   const queryClient = useQueryClient();
   const [open, setOpen] = useState(false);
   const [form, setForm] = useState<PracticeForm>(emptyForm);
@@ -196,6 +199,9 @@ export function PracticesCard({
   const practices = practicesQuery.data ?? [];
   const professionals = professionalsQuery.data ?? [];
   const coverage = form.practice_id ? coverageQuery.data : undefined;
+  const nursingTask = Boolean(
+    (catalogQuery.data ?? []).find((item) => item.id === form.practice_id)?.is_nursing_task,
+  );
   const professionalName = (id: string | null) => {
     if (!id) return null;
     const professional = professionals.find((item) => item.id === id);
@@ -206,7 +212,10 @@ export function PracticesCard({
     (total, practice) => total + Number(practice.charge?.amount ?? 0),
     0,
   );
-  const isOpen = OPEN_STATUSES.includes(hosp.status);
+  // Con el alta medica dada la internacion queda cerrada a cambios, salvo para un admin.
+  const locked = isPostDischarge(hosp.status);
+  const isOpen =
+    OPEN_STATUSES.includes(hosp.status) && (!locked || user?.role === 'ADMIN');
   /** Indicada, o realizada con el cargo anulado: en ambos casos falta facturarla. */
   const isPending = (practice: HospitalizationPracticeRead) =>
     practice.status === 'REQUESTED' ||
@@ -247,6 +256,13 @@ export function PracticesCard({
                       {practice.performed_by_id
                         ? ` por ${professionalName(practice.performed_by_id)}`
                         : ''}
+                    </p>
+                  )}
+                  {/* Quien la dio por realizada en el sistema: en las tareas de enfermeria
+                      es la enfermera que estuvo con el paciente. */}
+                  {practice.performed_by_user_name && (
+                    <p className="text-xs text-slate-500">
+                      Aplicada por {practice.performed_by_user_name}
                     </p>
                   )}
                   {practice.indication && (
@@ -337,13 +353,24 @@ export function PracticesCard({
             <select
               required
               value={form.practice_id}
-              onChange={(event) => setForm({ ...form, practice_id: event.target.value })}
+              onChange={(event) => {
+                const practice = (catalogQuery.data ?? []).find(
+                  (item) => item.id === event.target.value,
+                );
+                // Lo que ejecuta enfermeria se indica pendiente: lo aplica su panel.
+                setForm({
+                  ...form,
+                  practice_id: event.target.value,
+                  performed: practice?.is_nursing_task ? false : form.performed,
+                });
+              }}
               className={inputClass}
             >
               <option value="">Seleccione una practica</option>
               {(catalogQuery.data ?? []).map((practice) => (
                 <option key={practice.id} value={practice.id}>
                   {practice.code} - {practice.name}
+                  {practice.is_nursing_task ? ' (enfermeria)' : ''}
                 </option>
               ))}
             </select>
@@ -459,6 +486,12 @@ export function PracticesCard({
             />
             Ya realizada (genera el cargo en la cuenta)
           </label>
+
+          {nursingTask && !form.performed && (
+            <p className="rounded-lg bg-teal-50 px-4 py-2.5 text-xs text-teal-700">
+              La practica la ejecuta enfermeria: va a aparecer en su panel de tareas.
+            </p>
+          )}
 
           {form.performed && (
             <div className="grid gap-4 sm:grid-cols-2">

@@ -1,13 +1,15 @@
 import uuid
+from collections import Counter, defaultdict
+from dataclasses import dataclass
 
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.exceptions import DomainError
-from app.models.bed import Bed
+from app.models.bed import Bed, BedStatus
 from app.models.facility import Facility
-from app.models.room import Room
+from app.models.room import Room, RoomStatus
 from app.schemas.domain import BedCreate, BedRoomAssignmentCreate, BedUpdate, RoomCreate, RoomUpdate
 
 
@@ -112,3 +114,73 @@ class RoomService:
         if room.facility_id != facility_id:
             raise DomainError("La habitación no pertenece al centro informado", 422)
         return room
+
+
+#: Estado que muestra la habitación según sus camas, del más disponible al menos.
+#: BLOQUEADA y MANTENIMIENTO se deciden sobre la habitación misma, así que pisan lo demás.
+ROOM_STATUS_BY_BEDS: list[tuple[set[BedStatus], RoomStatus]] = [
+    ({BedStatus.AVAILABLE}, RoomStatus.AVAILABLE),
+    ({BedStatus.RESERVED}, RoomStatus.RESERVED),
+    ({BedStatus.OCCUPIED}, RoomStatus.OCCUPIED),
+    ({BedStatus.PENDING_CLEANING, BedStatus.CLEANING}, RoomStatus.PENDING_CLEANING),
+]
+
+ADMINISTRATIVE_ROOM_STATUSES = {RoomStatus.BLOCKED, RoomStatus.MAINTENANCE}
+
+
+@dataclass(frozen=True)
+class RoomOccupancy:
+    """Cómo está la habitación según sus camas."""
+
+    status: RoomStatus
+    beds: int = 0
+    available: int = 0
+    reserved: int = 0
+    occupied: int = 0
+    cleaning: int = 0
+    unavailable: int = 0
+
+
+def occupancy_of(room: Room, bed_statuses: list[BedStatus]) -> RoomOccupancy:
+    """El estado de una habitación es el de sus camas: es donde entra o no un paciente.
+
+    Sin camas no hay nada que derivar y vale lo que diga la habitación; una habitación
+    bloqueada o en mantenimiento lo está aunque sus camas estén libres.
+    """
+
+    counts = Counter(bed_statuses)
+    derived = room.status
+    if room.status not in ADMINISTRATIVE_ROOM_STATUSES and bed_statuses:
+        derived = RoomStatus.BLOCKED  # todas las camas fuera de servicio
+        for statuses, room_status in ROOM_STATUS_BY_BEDS:
+            if any(counts[status] for status in statuses):
+                derived = room_status
+                break
+    return RoomOccupancy(
+        status=derived,
+        beds=len(bed_statuses),
+        available=counts[BedStatus.AVAILABLE],
+        reserved=counts[BedStatus.RESERVED],
+        occupied=counts[BedStatus.OCCUPIED],
+        cleaning=counts[BedStatus.PENDING_CLEANING] + counts[BedStatus.CLEANING],
+        unavailable=(
+            counts[BedStatus.BLOCKED]
+            + counts[BedStatus.MAINTENANCE]
+            + counts[BedStatus.OUT_OF_SERVICE]
+        ),
+    )
+
+
+async def occupancy_by_room(
+    session: AsyncSession,
+    room_ids: list[uuid.UUID] | None = None,
+) -> dict[uuid.UUID, list[BedStatus]]:
+    """Estados de las camas de cada habitación, en una sola consulta."""
+
+    stmt = select(Bed.room_id, Bed.status)
+    if room_ids is not None:
+        stmt = stmt.where(Bed.room_id.in_(room_ids))
+    by_room: dict[uuid.UUID, list[BedStatus]] = defaultdict(list)
+    for room_id, status in (await session.execute(stmt)).all():
+        by_room[room_id].append(status)
+    return by_room

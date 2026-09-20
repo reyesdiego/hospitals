@@ -7,6 +7,7 @@
  */
 import type { AccountRead, ChargeItemRead, HospitalizationRead } from './model';
 import { type MockDB, now, saveDB } from './mock-db';
+import { postDischargeBlock } from './mock-practices';
 import { recordEvent } from './mock-workflow';
 
 type Ok = { kind: 'ok'; data: unknown; status: number };
@@ -59,6 +60,7 @@ export function handleAccountRequest(
   url: string,
   method: string,
   body: Record<string, unknown>,
+  role?: string,
 ): AccountResult | null {
   const accountMatch = url.match(/^\/api\/v1\/hospitalizations\/([^/]+)\/account$/);
   if (accountMatch && method === 'get') {
@@ -74,6 +76,8 @@ export function handleAccountRequest(
     const [, hospitalizationId, chargeItemId] = voidMatch;
     const hospitalization = db.hospitalizations.find((item) => item.id === hospitalizationId);
     if (!hospitalization) return err(404, 'La internación no tiene cuenta asociada');
+    const locked = postDischargeBlock(hospitalization.status, role);
+    if (locked) return err(locked.status, locked.detail);
     const account = accountOf(db, hospitalization);
     if (account.status === 'CLOSED' || account.status === 'CANCELLED') {
       return err(409, 'La cuenta está cerrada');

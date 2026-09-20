@@ -67,6 +67,7 @@ function practiceFromBody(
     requires_authorization: flag(body.requires_authorization),
     requires_consent: flag(body.requires_consent),
     default_waiting_period_days: Number(body.default_waiting_period_days ?? 0) || 0,
+    is_nursing_task: flag(body.is_nursing_task),
     is_active: flag(body.is_active, true),
     valid_from: text(body.valid_from),
     valid_until: text(body.valid_until),
@@ -329,6 +330,12 @@ function isCheck(
 }
 
 /** The performance is what charges the account of the hospitalization. */
+const APPLICANT_BY_ROLE: Record<string, string> = {
+  NURSE: 'Enfermeria',
+  DOCTOR: 'Profesional medico',
+  ADMIN: 'Administracion del sistema',
+};
+
 function chargePractice(
   db: MockDB,
   order: HospitalizationPracticeRead,
@@ -336,6 +343,7 @@ function chargePractice(
   performedAt: string,
   unitPrice: string | null,
   check: PlanCoverageCheckRead,
+  applicant?: string,
 ): PracticeResult | ChargeItemRead {
   const { payerId, planId } = coverageOf(db, order.hospitalization_id);
   let price = unitPrice;
@@ -404,6 +412,7 @@ function chargePractice(
 
   order.status = 'PERFORMED';
   order.performed_at = performedAt;
+  order.performed_by_user_name = order.performed_by_user_name ?? applicant ?? null;
   order.charge_item_id = item.id;
   order.charge = item;
   order.copayment_amount = check.copayment_amount;
@@ -428,6 +437,25 @@ function chargeIsVoid(db: MockDB, order: HospitalizationPracticeRead): boolean {
   return item === undefined || item.status === 'VOID';
 }
 
+/** Con el alta medica dada la internacion no recibe cambios, salvo de un administrador. */
+const POST_DISCHARGE_STATUSES = [
+  'CLINICALLY_DISCHARGED',
+  'ADMINISTRATIVELY_DISCHARGED',
+  'CLOSED',
+];
+
+export function postDischargeBlock(
+  status: string,
+  role: string | undefined,
+): { status: number; detail: string } | null {
+  if (!POST_DISCHARGE_STATUSES.includes(status)) return null;
+  if ((role ?? '').toLowerCase() === 'admin') return null;
+  return {
+    status: 403,
+    detail: 'La internación tiene alta médica: solo un administrador puede modificarla',
+  };
+}
+
 const OPEN_HOSPITALIZATION_STATUSES = [
   'PENDING_BED',
   'IN_PROGRESS',
@@ -441,12 +469,62 @@ function isResult(
   return 'kind' in value;
 }
 
+/** Panel de enfermeria: las practicas marcadas como suyas, con paciente y cama. */
+function nursingTasks(db: MockDB, params: Record<string, unknown>): unknown[] {
+  const pendingOnly = params.pending_only !== false && params.pending_only !== 'false';
+  const on = text(params.on);
+  return db.hospitalizationPractices
+    .filter((order) => {
+      const practice = db.practices.find((item) => item.id === order.practice_id);
+      if (!practice?.is_nursing_task) return false;
+      if (pendingOnly) return order.status === 'REQUESTED';
+      if (!on) return true;
+      const moment = order.performed_at ?? order.cancelled_at ?? order.prescribed_at;
+      return moment.slice(0, 10) === on;
+    })
+    .map((order) => {
+      const hospitalization = db.hospitalizations.find(
+        (item) => item.id === order.hospitalization_id,
+      );
+      const patient = db.patients.find((item) => item.id === hospitalization?.patient_id);
+      const assignment = db.bedAssignments.find(
+        (item) => item.hospitalization_id === order.hospitalization_id && !item.ended_at,
+      );
+      const bed = db.beds.find((item) => item.id === assignment?.bed_id);
+      const prescriber = db.professionals.find((item) => item.id === order.prescribed_by_id);
+      return {
+        id: order.id,
+        hospitalization_id: order.hospitalization_id,
+        practice_id: order.practice_id,
+        practice_code: order.practice_code,
+        practice_name: order.practice_name,
+        status: order.status,
+        quantity: order.quantity,
+        patient_id: patient?.id ?? '',
+        patient_name: patient ? `${patient.last_name}, ${patient.first_name}` : 'Paciente',
+        ward: bed?.ward ?? null,
+        room_code: bed?.room ?? null,
+        bed_code: bed?.code ?? null,
+        prescribed_by: prescriber
+          ? `${prescriber.last_name}, ${prescriber.first_name}`
+          : null,
+        prescribed_at: order.prescribed_at,
+        performed_at: order.performed_at,
+        performed_by: order.performed_by_user_name,
+        cancelled_at: order.cancelled_at,
+        indication: order.indication,
+        notes: order.notes,
+      };
+    });
+}
+
 export function handlePracticeRequest(
   db: MockDB,
   url: string,
   method: string,
   body: Record<string, unknown>,
   params: Record<string, unknown>,
+  role?: string,
 ): PracticeResult | null {
   // ------------------------------------------------------------ practices
   if (url === '/api/v1/practices' && method === 'get') {
@@ -589,6 +667,33 @@ export function handlePracticeRequest(
   }
 
   // ------------------------------------------- practices of a hospitalization
+  // --------------------------------------------------- tareas de enfermeria
+  if (url === '/api/v1/nursing-tasks' && method === 'get') {
+    return ok(nursingTasks(db, params));
+  }
+
+  const nursingMatch = url.match(/^\/api\/v1\/nursing-tasks\/([^/]+)\/(perform|cancel)$/);
+  if (nursingMatch && method === 'post') {
+    const [, orderId, action] = nursingMatch;
+    const order = db.hospitalizationPractices.find((item) => item.id === orderId);
+    if (!order) return err(404, 'Tarea inexistente');
+    const practice = db.practices.find((item) => item.id === order.practice_id);
+    if (!practice?.is_nursing_task) {
+      return err(
+        409,
+        'La práctica no es una tarea de enfermería: regístrela desde la internación',
+      );
+    }
+    return handlePracticeRequest(
+      db,
+      `/api/v1/hospitalizations/${order.hospitalization_id}/practices/${orderId}/${action}`,
+      method,
+      body,
+      params,
+      role,
+    );
+  }
+
   const coverageCheckMatch = url.match(
     /^\/api\/v1\/hospitalizations\/([^/]+)\/practices\/coverage-check$/,
   );
@@ -617,6 +722,8 @@ export function handlePracticeRequest(
       );
     }
     if (method === 'post') {
+      const locked = postDischargeBlock(hospitalization.status, role);
+      if (locked) return err(locked.status, locked.detail);
       if (!OPEN_HOSPITALIZATION_STATUSES.includes(hospitalization.status)) {
         return err(409, 'La internación ya no admite prácticas');
       }
@@ -651,6 +758,8 @@ export function handlePracticeRequest(
         prescribed_by_id: prescribedBy,
         performed_by_id: performedBy,
         service_id: text(body.service_id),
+        performed_by_user_id: null,
+        performed_by_user_name: null,
         charge_item_id: null,
         status: 'REQUESTED',
         quantity: (Number(body.quantity ?? 1) || 1).toFixed(3),
@@ -687,6 +796,7 @@ export function handlePracticeRequest(
           performedAt,
           decimal(body.unit_price),
           check,
+          APPLICANT_BY_ROLE[role ?? ''],
         );
         if (isResult(charged)) return charged;
       }
@@ -703,6 +813,8 @@ export function handlePracticeRequest(
     const [, hospitalizationId, orderId, action] = orderMatch;
     const hospitalization = db.hospitalizations.find((item) => item.id === hospitalizationId);
     if (!hospitalization) return err(404, 'Internación inexistente');
+    const locked = postDischargeBlock(hospitalization.status, role);
+    if (locked) return err(locked.status, locked.detail);
     const order = db.hospitalizationPractices.find(
       (item) => item.id === orderId && item.hospitalization_id === hospitalizationId,
     );
@@ -771,7 +883,15 @@ export function handlePracticeRequest(
     if (text(body.authorization_number)) {
       order.authorization_number = text(body.authorization_number);
     }
-    const charged = chargePractice(db, order, practice, performedAt, decimal(body.unit_price), check);
+    const charged = chargePractice(
+      db,
+      order,
+      practice,
+      performedAt,
+      decimal(body.unit_price),
+      check,
+      APPLICANT_BY_ROLE[role ?? ''],
+    );
     if (isResult(charged)) return charged;
     saveDB(db);
     return ok(order);

@@ -11,12 +11,37 @@ python -m venv .venv
 source .venv/bin/activate
 pip install -e ".[dev]"
 alembic upgrade head
+python -m app.db.seeds.users     # usuarios iniciales, uno por rol
 uvicorn app.main:app --reload
 ```
 
 - Swagger: http://localhost:8000/docs
 - Health: http://localhost:8000/health
 - PostgreSQL local: `localhost:5434`
+
+## Usuarios y permisos
+
+Todos los endpoints piden sesión salvo `/health` y `/api/v1/auth/login`. El login devuelve
+un token opaco (`Authorization: Bearer <token>`, 12 horas) y los permisos del usuario.
+
+`python -m app.db.seeds.users` crea uno por rol con la contraseña `Hospital.2026`, que hay
+que cambiar apenas se entra. No pisa usuarios ya creados.
+
+| Usuario | Rol | Puede |
+| --- | --- | --- |
+| `admin@hospital.local` | Administración | todo, incluido modificar una internación con alta médica y administrar usuarios |
+| `recepcion@hospital.local` | Recepción | registrar pacientes y coberturas, admitir, alta administrativa |
+| `medico@hospital.local` | Profesional médico | prácticas, equipo asistencial, plan y alta médica |
+| `enfermeria@hospital.local` | Enfermería | aplicar las tareas indicadas al paciente, limpieza y estado de camas |
+
+Consultar (`GET`) está habilitado para cualquier usuario con sesión; los permisos gobiernan
+lo que modifica datos. Qué permiso pide cada operación está en una tabla única,
+`app/core/authorization.py`: lo que no figura ahí y escribe queda solo para administración,
+para que agregar un endpoint y olvidarse de la tabla falle cerrado.
+
+Las contraseñas se guardan con `scrypt` y sal por usuario; de las sesiones se guarda solo el
+hash del token. Cambiar el rol, dar de baja o cambiar la contraseña de un usuario cierra sus
+sesiones abiertas.
 
 ## Actualizar cliente Orval
 
@@ -128,6 +153,22 @@ inofensivo y una cuenta cerrada no acepta anulaciones.
 Eso cierra el circuito con las prácticas: una vez anulado el cargo, la práctica realizada
 puede volver a facturarse (`/perform` con el importe correcto, que genera un cargo nuevo) o
 anularse. La anulación también queda en la auditoría como `CHARGE_ITEM_VOIDED`.
+
+## Tareas de enfermería
+
+Inyectables, medicación, extracciones y colocación de Holter no son un circuito aparte: son
+prácticas del nomenclador marcadas con `is_nursing_task`. El médico las indica desde la
+internación como cualquier otra práctica y quedan pendientes; enfermería las ejecuta desde
+`GET /nursing-tasks`, que lista lo indicado en internaciones activas con el paciente, la sala
+y la cama.
+
+- `POST /nursing-tasks/{order_id}/perform` marca la tarea como aplicada: es la realización de
+  siempre, con su cargo en la cuenta y su evento en la internación.
+- `POST /nursing-tasks/{order_id}/cancel` la cancela con el motivo.
+- `?pending_only=false&on=YYYY-MM-DD` agrega lo aplicado y cancelado ese día, para cerrar turno.
+
+Por este camino solo pasan prácticas marcadas como de enfermería; el resto se registra desde
+la internación, que es donde está quien las hace.
 
 ## Flujo de internación
 

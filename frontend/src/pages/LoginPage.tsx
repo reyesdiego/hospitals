@@ -1,30 +1,30 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '@/auth/AuthContext';
-import { type Role, ROLE_LABELS, ROLE_DESCRIPTIONS } from '@/auth/types';
-import { HeartPulse, ArrowRight, ShieldCheck, UserCog, Stethoscope, HeartPulse as NurseIcon, User } from 'lucide-react';
-
-const ROLE_ICONS: Record<Role, typeof HeartPulse> = {
-  admin: ShieldCheck,
-  doctor: Stethoscope,
-  nurse: NurseIcon,
-  receptionist: UserCog,
-  patient: User,
-};
+import { apiErrorMessage } from '@/utils/api-error';
+import { HeartPulse, ArrowRight } from 'lucide-react';
 
 export default function LoginPage() {
   const { login } = useAuth();
   const navigate = useNavigate();
-  const [selectedRole, setSelectedRole] = useState<Role | null>(null);
-  const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [error, setError] = useState<string | null>(null);
+  const [signingIn, setSigningIn] = useState(false);
 
-  const handleLogin = (e: React.FormEvent) => {
+  // El rol lo resuelve el servidor a partir del usuario: no se elige al entrar.
+  const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!selectedRole || !name || !email) return;
-    login(selectedRole, name, email);
-    navigate('/dashboard');
+    setError(null);
+    setSigningIn(true);
+    try {
+      await login(email.trim(), password);
+      navigate('/dashboard');
+    } catch (loginError) {
+      setError(apiErrorMessage(loginError, 'No se pudo iniciar sesion.'));
+    } finally {
+      setSigningIn(false);
+    }
   };
 
   return (
@@ -71,61 +71,12 @@ export default function LoginPage() {
       <div className="flex items-center justify-center bg-slate-50 p-8 lg:w-1/2 lg:p-16">
         <div className="w-full max-w-md">
           <h2 className="mb-2 text-2xl font-bold text-slate-800">Iniciar sesion</h2>
-          <p className="mb-8 text-slate-500">Selecciona tu perfil para continuar</p>
-
-          {/* Role selection */}
-          <div className="mb-6 grid grid-cols-2 gap-3 sm:grid-cols-3">
-            {(Object.keys(ROLE_LABELS) as Role[]).map((role) => {
-              const Icon = ROLE_ICONS[role];
-              const active = selectedRole === role;
-              return (
-                <button
-                  key={role}
-                  type="button"
-                  onClick={() => setSelectedRole(role)}
-                  className={`flex flex-col items-center gap-2 rounded-xl border-2 p-4 transition-all duration-200 ${
-                    active
-                      ? 'border-teal-500 bg-teal-50 shadow-md shadow-teal-100'
-                      : 'border-slate-200 bg-white hover:border-teal-200 hover:bg-slate-50'
-                  }`}
-                >
-                  <Icon
-                    className={`h-6 w-6 ${active ? 'text-teal-600' : 'text-slate-400'}`}
-                    strokeWidth={2}
-                  />
-                  <span
-                    className={`text-xs font-semibold ${
-                      active ? 'text-teal-700' : 'text-slate-500'
-                    }`}
-                  >
-                    {ROLE_LABELS[role]}
-                  </span>
-                </button>
-              );
-            })}
-          </div>
-
-          {selectedRole && (
-            <p className="mb-6 rounded-lg bg-teal-50 px-4 py-2.5 text-sm text-teal-700">
-              {ROLE_DESCRIPTIONS[selectedRole]}
-            </p>
-          )}
+          <p className="mb-8 text-slate-500">
+            Ingresa con tu usuario: los permisos salen de tu perfil.
+          </p>
 
           {/* Login form */}
           <form onSubmit={handleLogin} className="space-y-4">
-            <div>
-              <label className="mb-1.5 block text-sm font-medium text-slate-600">
-                Nombre completo
-              </label>
-              <input
-                type="text"
-                value={name}
-                onChange={(e) => setName(e.target.value)}
-                placeholder="Dr. Ana Lopez"
-                className="w-full rounded-lg border border-slate-200 bg-white px-4 py-2.5 text-slate-800 outline-none transition-all focus:border-teal-500 focus:ring-2 focus:ring-teal-500/20"
-                required
-              />
-            </div>
             <div>
               <label className="mb-1.5 block text-sm font-medium text-slate-600">
                 Correo electronico
@@ -134,7 +85,7 @@ export default function LoginPage() {
                 type="email"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
-                placeholder="ana.lopez@hospital.es"
+                placeholder="usuario@hospital.local"
                 className="w-full rounded-lg border border-slate-200 bg-white px-4 py-2.5 text-slate-800 outline-none transition-all focus:border-teal-500 focus:ring-2 focus:ring-teal-500/20"
                 required
               />
@@ -149,20 +100,27 @@ export default function LoginPage() {
                 onChange={(e) => setPassword(e.target.value)}
                 placeholder="••••••••"
                 className="w-full rounded-lg border border-slate-200 bg-white px-4 py-2.5 text-slate-800 outline-none transition-all focus:border-teal-500 focus:ring-2 focus:ring-teal-500/20"
+                required
               />
             </div>
+
+            {error && (
+              <p className="rounded-lg bg-red-50 px-4 py-2.5 text-sm font-medium text-red-600">
+                {error}
+              </p>
+            )}
             <button
               type="submit"
-              disabled={!selectedRole || !name || !email}
+              disabled={signingIn || !email || !password}
               className="flex w-full items-center justify-center gap-2 rounded-lg bg-gradient-to-r from-teal-500 to-cyan-600 px-4 py-3 font-semibold text-white shadow-lg shadow-cyan-900/20 transition-all duration-200 hover:shadow-xl hover:shadow-cyan-900/30 disabled:cursor-not-allowed disabled:opacity-50"
             >
-              Acceder
+              {signingIn ? 'Ingresando...' : 'Acceder'}
               <ArrowRight className="h-4 w-4" />
             </button>
           </form>
 
           <p className="mt-6 text-center text-xs text-slate-400">
-            Entorno de demostracion - cualquier credencial es valida
+            Si no tenes usuario, pedile uno a la administracion del sistema.
           </p>
         </div>
       </div>

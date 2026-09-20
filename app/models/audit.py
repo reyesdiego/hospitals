@@ -38,6 +38,8 @@ class HospitalizationEventType(str, enum.Enum):
     ACCOUNT_READY_FOR_REVIEW = "ACCOUNT_READY_FOR_REVIEW"
     HOSPITALIZATION_CLOSED = "HOSPITALIZATION_CLOSED"
     HOSPITALIZATION_CANCELLED = "HOSPITALIZATION_CANCELLED"
+    #: Un administrador modificó una internación que ya tenía alta médica.
+    POST_DISCHARGE_CHANGE = "POST_DISCHARGE_CHANGE"
 
 
 class HospitalizationEvent(UUIDMixin, TimestampMixin, Base):

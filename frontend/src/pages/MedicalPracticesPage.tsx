@@ -41,6 +41,7 @@ type PracticeForm = {
   radiology_units: string;
   requires_authorization: boolean;
   requires_consent: boolean;
+  is_nursing_task: boolean;
   default_waiting_period_days: string;
   is_active: boolean;
   valid_from: string;
@@ -63,6 +64,7 @@ const emptyForm: PracticeForm = {
   radiology_units: '0',
   requires_authorization: false,
   requires_consent: false,
+  is_nursing_task: false,
   default_waiting_period_days: '0',
   is_active: true,
   valid_from: '',
@@ -87,6 +89,7 @@ function toPayload(form: PracticeForm): MedicalPracticeCreate {
     radiology_units: unit(form.radiology_units),
     requires_authorization: form.requires_authorization,
     requires_consent: form.requires_consent,
+    is_nursing_task: form.is_nursing_task,
     default_waiting_period_days: Number(form.default_waiting_period_days || 0),
     is_active: form.is_active,
     valid_from: form.valid_from || null,
@@ -111,6 +114,7 @@ function toForm(practice: MedicalPracticeRead): PracticeForm {
     radiology_units: practice.radiology_units,
     requires_authorization: practice.requires_authorization,
     requires_consent: practice.requires_consent,
+    is_nursing_task: practice.is_nursing_task,
     default_waiting_period_days: String(practice.default_waiting_period_days),
     is_active: practice.is_active,
     valid_from: practice.valid_from ?? '',
@@ -385,6 +389,11 @@ export default function MedicalPracticesPage() {
                               Consentimiento
                             </span>
                           )}
+                          {practice.is_nursing_task && (
+                            <span className="rounded-md bg-teal-50 px-2 py-0.5 text-xs font-medium text-teal-700">
+                              Enfermeria
+                            </span>
+                          )}
                           {practice.default_waiting_period_days > 0 && (
                             <span className="rounded-md bg-slate-100 px-2 py-0.5 text-xs font-medium text-slate-600">
                               Carencia {practice.default_waiting_period_days} dias
@@ -607,6 +616,15 @@ export default function MedicalPracticesPage() {
                 className="h-4 w-4 rounded border-slate-300"
               />
               Requiere autorizacion previa
+            </label>
+            <label className="flex items-center gap-2 text-sm text-slate-600">
+              <input
+                type="checkbox"
+                checked={form.is_nursing_task}
+                onChange={(event) => setForm({ ...form, is_nursing_task: event.target.checked })}
+                className="h-4 w-4 rounded border-slate-300"
+              />
+              La ejecuta enfermeria
             </label>
             <label className="flex items-center gap-2 text-sm text-slate-600">
               <input

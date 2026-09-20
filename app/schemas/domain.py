@@ -74,11 +74,24 @@ class RoomUpdate(BaseModel):
 
 
 class RoomRead(ORMModel):
+    """``status`` es el estado real: sale de las camas de la habitación.
+
+    ``administrative_status`` es lo que se dejó escrito sobre la habitación misma, que solo
+    manda cuando está bloqueada o en mantenimiento.
+    """
+
     id: uuid.UUID
     facility_id: uuid.UUID
     code: str
     ward: str
     status: RoomStatus
+    administrative_status: RoomStatus
+    beds: int = 0
+    available_beds: int = 0
+    reserved_beds: int = 0
+    occupied_beds: int = 0
+    cleaning_beds: int = 0
+    unavailable_beds: int = 0
     created_at: datetime
 
 

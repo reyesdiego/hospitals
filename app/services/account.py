@@ -10,6 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.core.exceptions import DomainError
+from app.core.users import STAFF, RequestUser
 from app.models.account import (
     Account,
     AccountStatus,
@@ -22,6 +23,7 @@ from app.models.audit import HospitalizationEventType
 from app.models.hospitalization import Hospitalization, HospitalizationStatus
 from app.models.practice import MedicalPractice
 from app.schemas.workflow import ChargeItemCreate, ChargeItemVoidCreate
+from app.services.access import require_editable
 from app.services.audit import record_event
 
 
@@ -114,8 +116,14 @@ def mark_ready_for_review(
 
 
 class AccountService:
-    def __init__(self, session: AsyncSession):
+    def __init__(self, session: AsyncSession, user: RequestUser = STAFF):
         self.session = session
+        self.user = user
+
+    async def _editable(self, hospitalization_id: uuid.UUID, action: str) -> None:
+        hospitalization = await self.session.get(Hospitalization, hospitalization_id)
+        if hospitalization:
+            require_editable(self.session, hospitalization, self.user, action=action)
 
     async def for_hospitalization(self, hospitalization_id: uuid.UUID) -> Account:
         account = await self.session.scalar(
@@ -133,6 +141,7 @@ class AccountService:
         payload: ChargeItemCreate,
     ) -> ChargeItem:
         async with self.session.begin():
+            await self._editable(hospitalization_id, "Agregar un cargo a la cuenta")
             account = await require_open_account(self.session, hospitalization_id)
             practice: MedicalPractice | None = None
             if payload.practice_id:
@@ -165,6 +174,7 @@ class AccountService:
         """Void a charge of the account. The line is kept and stops adding to the total."""
 
         async with self.session.begin():
+            await self._editable(hospitalization_id, "Anular un cargo de la cuenta")
             account = await require_open_account(self.session, hospitalization_id)
             item = await self.session.get(ChargeItem, charge_item_id)
             if not item or item.account_id != account.id:

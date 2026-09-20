@@ -1,5 +1,6 @@
 import { axiosInstance } from './custom-instance';
 import {
+  type MockDB,
   admissionWithEffectiveStatus,
   loadDB,
   now,
@@ -9,6 +10,7 @@ import {
   uuid,
 } from './mock-db';
 import { handleAccountRequest } from './mock-account';
+import { handleAuthRequest, roleFromAuthorization } from './mock-auth';
 import { coverageFields, handleCoverageRequest, isCoverageError } from './mock-coverage';
 import { handlePracticeRequest } from './mock-practices';
 import {
@@ -34,6 +36,39 @@ function delay(ms = 300) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+/** El estado de una habitacion sale de sus camas, igual que en la API. */
+function roomRead(db: MockDB, room: RoomRead): RoomRead {
+  const beds = db.beds.filter((bed) => bed.room_id === room.id);
+  const count = (...statuses: BedStatus[]) =>
+    beds.filter((bed) => statuses.includes(bed.status)).length;
+  const available = count('AVAILABLE');
+  const reserved = count('RESERVED');
+  const occupied = count('OCCUPIED');
+  const cleaning = count('PENDING_CLEANING', 'CLEANING');
+  const unavailable = count('BLOCKED', 'MAINTENANCE', 'OUT_OF_SERVICE');
+
+  const administrative = room.administrative_status ?? room.status;
+  let status = administrative;
+  if (administrative !== 'BLOCKED' && administrative !== 'MAINTENANCE' && beds.length > 0) {
+    if (available > 0) status = 'AVAILABLE';
+    else if (reserved > 0) status = 'RESERVED';
+    else if (occupied > 0) status = 'OCCUPIED';
+    else if (cleaning > 0) status = 'PENDING_CLEANING';
+    else status = 'BLOCKED';
+  }
+  return {
+    ...room,
+    status,
+    administrative_status: administrative,
+    beds: beds.length,
+    available_beds: available,
+    reserved_beds: reserved,
+    occupied_beds: occupied,
+    cleaning_beds: cleaning,
+    unavailable_beds: unavailable,
+  };
+}
+
 function setupMockAdapter() {
   axiosInstance.defaults.adapter = async (config) => {
     await delay();
@@ -42,10 +77,30 @@ function setupMockAdapter() {
     const db = loadDB();
     const body = config.data ? JSON.parse(config.data) : {};
 
+    // El rol sale del token, como en la API: el mock aplica las reglas que dependen de
+    // quien opera (por ejemplo, el candado posterior al alta medica).
+    const authorization = config.headers?.Authorization as string | undefined;
+    const role = roleFromAuthorization(authorization);
+    const session = handleAuthRequest(url, method, body, authorization);
+    if (session) {
+      if (session.kind === 'error') {
+        return Promise.reject({
+          response: { status: session.status, data: { detail: session.detail } },
+          config,
+        });
+      }
+      return {
+        data: session.data,
+        status: session.status,
+        statusText: 'OK',
+        headers: {},
+        config,
+      };
+    }
     const catalog =
       handleCoverageRequest(db, url, method, body, config.params ?? {}) ??
-      handlePracticeRequest(db, url, method, body, config.params ?? {}) ??
-      handleAccountRequest(db, url, method, body);
+      handlePracticeRequest(db, url, method, body, config.params ?? {}, role) ??
+      handleAccountRequest(db, url, method, body, role);
     const workflow = catalog ?? handleWorkflowRequest(db, url, method, body);
     if (workflow) {
       if (workflow.kind === 'error') {
@@ -141,7 +196,13 @@ function setupMockAdapter() {
 
     // Rooms
     if (url === '/api/v1/rooms' && method === 'get') {
-      return { data: db.rooms, status: 200, statusText: 'OK', headers: {}, config };
+      return {
+        data: db.rooms.map((room) => roomRead(db, room)),
+        status: 200,
+        statusText: 'OK',
+        headers: {},
+        config,
+      };
     }
     if (url === '/api/v1/rooms' && method === 'post') {
       const room: RoomRead = {
@@ -150,11 +211,12 @@ function setupMockAdapter() {
         code: body.code,
         ward: body.ward,
         status: body.status ?? 'AVAILABLE',
+        administrative_status: body.status ?? 'AVAILABLE',
         created_at: now(),
       };
       db.rooms.push(room);
       saveDB(db);
-      return { data: room, status: 201, statusText: 'Created', headers: {}, config };
+      return { data: roomRead(db, room), status: 201, statusText: 'Created', headers: {}, config };
     }
     const roomMatch = url.match(/^\/api\/v1\/rooms\/([^/]+)$/);
     if (roomMatch && method === 'put') {
@@ -165,6 +227,8 @@ function setupMockAdapter() {
       room.facility_id = body.facility_id;
       room.code = body.code;
       room.ward = body.ward;
+      // Lo que se edita es lo que se escribe sobre la habitacion; el estado sale de las camas.
+      room.administrative_status = body.status;
       room.status = body.status;
       db.beds
         .filter((bed) => bed.room_id === room.id)
@@ -174,7 +238,7 @@ function setupMockAdapter() {
           bed.room = room.code;
         });
       saveDB(db);
-      return { data: room, status: 200, statusText: 'OK', headers: {}, config };
+      return { data: roomRead(db, room), status: 200, statusText: 'OK', headers: {}, config };
     }
     if (roomMatch && method === 'delete') {
       const roomId = roomMatch[1];

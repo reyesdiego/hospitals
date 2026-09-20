@@ -20,6 +20,8 @@ class Settings(BaseSettings):
     postgres_user: str = "hospital"
     postgres_password: str = "hospital_dev_password"
     db_echo: bool = False
+    #: Zona del hospital: "hoy" es el día de quien está en el turno, no el de UTC.
+    timezone: str = "America/Argentina/Buenos_Aires"
 
     @computed_field
     @property

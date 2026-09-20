@@ -41,7 +41,7 @@ const OPERATIONAL_STATUSES: BedStatus[] = [
 ];
 
 export default function BedsPage() {
-  const { user } = useAuth();
+  const { user, can } = useAuth();
   const api = getDefault();
   const bedApi = getBedWorkflow();
   const queryClient = useQueryClient();
@@ -54,7 +54,8 @@ export default function BedsPage() {
   const [historyBed, setHistoryBed] = useState<BedRead | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  const canCreate = Boolean(user && ['admin', 'nurse'].includes(user.role));
+  const canCreate = can('CATALOG');
+  const canClean = can('BED_CLEANING');
 
   const bedsQuery = useQuery({
     queryKey: ['beds'],
@@ -105,7 +106,7 @@ export default function BedsPage() {
   const startCleaningMutation = useMutation({
     mutationFn: (bedId: string) =>
       bedApi.startBedCleaningApiV1BedsBedIdCleaningStartPost(bedId, {
-        changed_by: user?.name ?? null,
+        changed_by: user?.full_name ?? null,
       }),
     onSuccess: onDone,
     onError: (err) => setError(apiErrorMessage(err, 'No se pudo iniciar la limpieza.')),
@@ -114,7 +115,7 @@ export default function BedsPage() {
   const completeCleaningMutation = useMutation({
     mutationFn: (bedId: string) =>
       bedApi.completeBedCleaningApiV1BedsBedIdCleaningCompletePost(bedId, {
-        changed_by: user?.name ?? null,
+        changed_by: user?.full_name ?? null,
       }),
     onSuccess: onDone,
     onError: (err) => setError(apiErrorMessage(err, 'No se pudo finalizar la limpieza.')),
@@ -124,7 +125,7 @@ export default function BedsPage() {
     mutationFn: ({ bedId, status }: { bedId: string; status: BedStatus }) =>
       api.setBedStatusApiV1BedsBedIdStatusPost(bedId, {
         status,
-        changed_by: user?.name ?? null,
+        changed_by: user?.full_name ?? null,
         reason: statusReason || null,
       }),
     onSuccess: () => {
@@ -199,7 +200,7 @@ export default function BedsPage() {
                     {wardBeds.map((bed) => (
                       <div key={bed.id} className="rounded-lg border border-slate-100 bg-white p-2">
                         <BedCard bed={bed} />
-                        {canCreate && (
+                        {canClean && (
                           <div className="mt-2 grid gap-2">
                             {bed.status === 'PENDING_CLEANING' && (
                               <ActionButton

@@ -72,6 +72,7 @@ const initialAdmission: AdmissionCreate = {
   responsible_contact_relationship: '',
   admission_reason: '',
   responsible_physician: '',
+  responsible_physician_id: null,
   requesting_service_id: null,
   presumptive_diagnosis: '',
   requested_bed_id: null,
@@ -121,6 +122,10 @@ export default function AdmissionPanelPage() {
     queryFn: () =>
       registry.listPatientCoveragesApiV1PatientsPatientIdCoveragesGet(admissionForm.patient_id),
     enabled: admissionForm.patient_id !== '',
+  });
+  const professionalsQuery = useQuery({
+    queryKey: ['professionals'],
+    queryFn: () => api.listProfessionalsApiV1ProfessionalsGet(),
   });
   const plansQuery = useQuery({
     queryKey: ['health-plans', coverageDraft.payer_id],
@@ -187,6 +192,7 @@ export default function AdmissionPanelPage() {
 
   const selectedPatient = patients.find((patient) => patient.id === admissionForm.patient_id);
   const payers = payersQuery.data ?? [];
+  const professionals = professionalsQuery.data ?? [];
   const plans = plansQuery.data ?? [];
   const patientCoverages = patientCoveragesQuery.data ?? [];
   const chosenCoverage = patientCoverages.find((coverage) => coverage.id === coverageChoice);
@@ -229,7 +235,10 @@ export default function AdmissionPanelPage() {
         Boolean(coverageDraft.payer_id || coverageDraft.payer_name.trim()),
     },
     { label: 'Consentimientos', done: signedConsents.GENERAL_ADMISSION },
-    { label: 'Ingreso', done: Boolean(admissionForm.admission_reason && admissionForm.responsible_physician) },
+    {
+      label: 'Ingreso',
+      done: Boolean(admissionForm.admission_reason && admissionForm.responsible_physician_id),
+    },
   ];
 
   const createPatient = (event: React.FormEvent) => {
@@ -286,9 +295,17 @@ export default function AdmissionPanelPage() {
   };
 
   const loading =
-    patientsQuery.isLoading || servicesQuery.isLoading || bedsQuery.isLoading || admissionsQuery.isLoading;
+    patientsQuery.isLoading ||
+    servicesQuery.isLoading ||
+    bedsQuery.isLoading ||
+    admissionsQuery.isLoading ||
+    professionalsQuery.isLoading;
   const error =
-    patientsQuery.isError || servicesQuery.isError || bedsQuery.isError || admissionsQuery.isError;
+    patientsQuery.isError ||
+    servicesQuery.isError ||
+    bedsQuery.isError ||
+    admissionsQuery.isError ||
+    professionalsQuery.isError;
 
   return (
     <div>
@@ -651,15 +668,30 @@ export default function AdmissionPanelPage() {
                 </select>
               </div>
               <div className="mt-4 grid gap-4 md:grid-cols-2">
-                <input
+                <select
                   required
-                  placeholder="Medico responsable"
-                  value={admissionForm.responsible_physician}
-                  onChange={(e) =>
-                    setAdmissionForm({ ...admissionForm, responsible_physician: e.target.value })
-                  }
+                  value={admissionForm.responsible_physician_id ?? ''}
+                  onChange={(e) => {
+                    const professional = professionals.find((item) => item.id === e.target.value);
+                    setAdmissionForm({
+                      ...admissionForm,
+                      responsible_physician_id: professional?.id ?? null,
+                      // El nombre queda escrito en la admision: es lo que se lee despues
+                      // aunque el legajo del profesional cambie.
+                      responsible_physician: professional
+                        ? `${professional.last_name}, ${professional.first_name}`
+                        : '',
+                    });
+                  }}
                   className="rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-teal-500"
-                />
+                >
+                  <option value="">Medico responsable</option>
+                  {professionals.map((professional) => (
+                    <option key={professional.id} value={professional.id}>
+                      {professional.last_name}, {professional.first_name}
+                    </option>
+                  ))}
+                </select>
                 <input
                   placeholder="Diagnostico presuntivo"
                   value={admissionForm.presumptive_diagnosis ?? ''}

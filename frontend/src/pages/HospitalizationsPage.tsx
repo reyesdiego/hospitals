@@ -8,11 +8,11 @@ import { formatDateTime } from '@/utils/format';
 import { ClipboardPlus, Plus } from 'lucide-react';
 
 export default function HospitalizationsPage() {
-  const { user } = useAuth();
+  const { can } = useAuth();
   const navigate = useNavigate();
   const api = getDefault();
 
-  const canCreate = Boolean(user && ['admin', 'doctor', 'nurse'].includes(user.role));
+  const canCreate = can('ADMISSION');
 
   const patientsQuery = useQuery({
     queryKey: ['patients'],

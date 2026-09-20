@@ -30,6 +30,7 @@ export interface MedicalPracticeRead {
   radiology_units: string;
   requires_authorization: boolean;
   requires_consent: boolean;
+  is_nursing_task: boolean;
   default_waiting_period_days: number;
   is_active: boolean;
   valid_from: string | null;

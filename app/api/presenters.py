@@ -6,14 +6,20 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.exceptions import DomainError
 from app.models.account import Account, ChargeItem
-from app.models.bed import Bed
+from app.models.bed import Bed, BedStatus
 from app.models.practice import HealthPlanPractice, HospitalizationPractice
 from app.models.room import Room
-from app.schemas.domain import BedRead, PatientRead
-from app.schemas.practice import HealthPlanPracticeRead, HospitalizationPracticeRead
+from app.schemas.domain import BedRead, PatientRead, RoomRead
+from app.schemas.practice import (
+    HealthPlanPracticeRead,
+    HospitalizationPracticeRead,
+    NursingTaskRead,
+)
 from app.schemas.workflow import AccountRead, ChargeItemRead
 from app.services.account import AccountService
+from app.services.nursing import NursingTask
 from app.services.plan_coverage import effective_waiting_period
+from app.services.room import occupancy_of
 
 
 async def bed_read(
@@ -99,4 +105,53 @@ def health_plan_practice_read(entry: HealthPlanPractice) -> HealthPlanPracticeRe
         requires_authorization=entry.requires_authorization,
         notes=entry.notes,
         created_at=entry.created_at,
+    )
+
+
+def room_read(room: Room, bed_statuses: list[BedStatus]) -> RoomRead:
+    """La habitación se lee con el estado que le dan sus camas, no con el que quedó escrito."""
+
+    occupancy = occupancy_of(room, bed_statuses)
+    return RoomRead(
+        id=room.id,
+        facility_id=room.facility_id,
+        code=room.code,
+        ward=room.ward,
+        status=occupancy.status,
+        administrative_status=room.status,
+        beds=occupancy.beds,
+        available_beds=occupancy.available,
+        reserved_beds=occupancy.reserved,
+        occupied_beds=occupancy.occupied,
+        cleaning_beds=occupancy.cleaning,
+        unavailable_beds=occupancy.unavailable,
+        created_at=room.created_at,
+    )
+
+
+def nursing_task_read(task: NursingTask) -> NursingTaskRead:
+    order, patient = task.order, task.patient
+    prescriber = task.prescribed_by
+    return NursingTaskRead(
+        id=order.id,
+        hospitalization_id=order.hospitalization_id,
+        practice_id=order.practice_id,
+        practice_code=order.practice_code,
+        practice_name=order.practice_name,
+        status=order.status,
+        quantity=order.quantity,
+        patient_id=patient.id,
+        patient_name=f"{patient.last_name}, {patient.first_name}",
+        ward=task.ward,
+        room_code=task.room_code,
+        bed_code=task.bed_code,
+        prescribed_by=(
+            f"{prescriber.last_name}, {prescriber.first_name}" if prescriber else None
+        ),
+        prescribed_at=order.prescribed_at,
+        performed_at=order.performed_at,
+        performed_by=order.performed_by_user_name,
+        cancelled_at=order.cancelled_at,
+        indication=order.indication,
+        notes=order.notes,
     )

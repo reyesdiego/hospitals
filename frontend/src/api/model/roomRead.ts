@@ -6,11 +6,24 @@
  */
 import type { RoomStatus } from './roomStatus';
 
+/**
+ * ``status`` es el estado real: sale de las camas de la habitación.
+ *
+ * ``administrative_status`` es lo que se dejó escrito sobre la habitación misma, que solo
+ * manda cuando está bloqueada o en mantenimiento.
+ */
 export interface RoomRead {
   id: string;
   facility_id: string;
   code: string;
   ward: string;
   status: RoomStatus;
+  administrative_status: RoomStatus;
+  beds?: number;
+  available_beds?: number;
+  reserved_beds?: number;
+  occupied_beds?: number;
+  cleaning_beds?: number;
+  unavailable_beds?: number;
   created_at: string;
 }

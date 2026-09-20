@@ -124,6 +124,9 @@ class MedicalPractice(UUIDMixin, TimestampMixin, Base):
         Boolean, default=False, server_default="false"
     )
     requires_consent: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
+    # La indica el médico y la ejecuta enfermería: inyectables, medicación, extracciones,
+    # colocación de Holter. Es lo que la hace aparecer en el panel de enfermería.
+    is_nursing_task: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
     # Carencia con la que se incorpora la práctica a cualquier plan. Cada plan puede pactar
     # la suya en :class:`HealthPlanPractice`; esta es la que rige mientras no lo haga.
     default_waiting_period_days: Mapped[int] = mapped_column(
@@ -301,6 +304,18 @@ class HospitalizationPractice(UUIDMixin, TimestampMixin, Base):
     performed_by_id: Mapped[uuid.UUID | None] = mapped_column(
         ForeignKey("professionals.id", ondelete="RESTRICT"), index=True
     )
+    # Quién la dio por realizada en el sistema. Es otra cosa que ``performed_by_id``: el
+    # profesional ejecutor puede no tener usuario, y quien la aplica —una enfermera, por
+    # ejemplo— puede no estar en el padrón de profesionales.
+    performed_by_user_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey(
+            "users.id",
+            ondelete="RESTRICT",
+            name="fk_hosp_practices_performed_by_user_id_users",
+        ),
+        index=True,
+    )
+    performed_by_user_name: Mapped[str | None] = mapped_column(String(150))
     service_id: Mapped[uuid.UUID | None] = mapped_column(
         ForeignKey("services.id", ondelete="RESTRICT"), index=True
     )

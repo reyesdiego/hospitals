@@ -59,6 +59,7 @@ from app.models.practice import (
 from app.models.professional import Professional, ProfessionalSpecialty, Specialty
 from app.models.room import Room, RoomStatus
 from app.models.service import Service
+from app.models.user import User, UserSession
 
 __all__ = [
     "Account",
@@ -124,4 +125,6 @@ __all__ = [
     "Service",
     "Specialty",
     "TransferStatus",
+    "User",
+    "UserSession",
 ]

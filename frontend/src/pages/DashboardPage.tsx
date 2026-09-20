@@ -37,7 +37,7 @@ export default function DashboardPage() {
   return (
     <div>
       <PageHeader
-        title={`Bienvenido, ${user?.name}`}
+        title={`Bienvenido, ${user?.full_name}`}
         subtitle={`Conectado como ${user ? ROLE_LABELS[user.role] : ''} - Resumen general del sistema`}
       />
 

@@ -1,12 +1,4 @@
-import { type Role } from '../auth/types';
-
-export type NavItem = {
-  label: string;
-  path: string;
-  icon: string;
-  roles: Role[];
-};
-
+import { type Permission } from '@/api/model';
 import {
   LayoutDashboard,
   Users,
@@ -19,6 +11,8 @@ import {
   ClipboardCheck,
   ClipboardList,
   ShieldPlus,
+  Syringe,
+  UserCog,
   type LucideIcon,
 } from 'lucide-react';
 
@@ -26,7 +20,8 @@ export type NavConfig = {
   label: string;
   path: string;
   icon: LucideIcon;
-  roles: Role[];
+  /** Vacio: lo ve cualquier usuario con sesion. Si no, hace falta alguno de estos permisos. */
+  permissions: Permission[];
 };
 
 export const NAV_ITEMS: NavConfig[] = [
@@ -34,67 +29,79 @@ export const NAV_ITEMS: NavConfig[] = [
     label: 'Panel principal',
     path: '/dashboard',
     icon: LayoutDashboard,
-    roles: ['admin', 'doctor', 'nurse', 'receptionist', 'patient'],
+    permissions: [],
   },
   {
     label: 'Pacientes',
     path: '/patients',
     icon: Users,
-    roles: ['admin', 'doctor', 'nurse', 'receptionist'],
+    permissions: ['ADMISSION'],
   },
   {
     label: 'Profesionales',
     path: '/professionals',
     icon: Stethoscope,
-    roles: ['admin', 'doctor', 'nurse', 'receptionist'],
+    permissions: ['CATALOG'],
   },
   {
     label: 'Admision',
     path: '/admissions',
     icon: ClipboardCheck,
-    roles: ['admin', 'doctor', 'nurse', 'receptionist'],
+    permissions: ['ADMISSION'],
   },
   {
     label: 'Hospitalizaciones',
     path: '/hospitalizations',
     icon: ClipboardPlus,
-    roles: ['admin', 'doctor', 'nurse'],
+    permissions: ['HOSPITALIZATION'],
+  },
+  {
+    label: 'Tareas de enfermeria',
+    path: '/nursing-tasks',
+    icon: Syringe,
+    permissions: ['NURSING_TASKS'],
   },
   {
     label: 'Camas',
     path: '/beds',
     icon: BedDouble,
-    roles: ['admin', 'doctor', 'nurse'],
+    permissions: ['BED_CLEANING', 'BED_MANAGEMENT'],
   },
   {
     label: 'Habitaciones',
     path: '/rooms',
     icon: DoorOpen,
-    roles: ['admin', 'nurse'],
+    permissions: ['CATALOG'],
   },
   {
     label: 'Centros',
     path: '/facilities',
     icon: Building2,
-    roles: ['admin'],
+    permissions: ['CATALOG'],
   },
   {
     label: 'Servicios',
     path: '/services',
     icon: Stethoscope,
-    roles: ['admin'],
+    permissions: ['CATALOG'],
   },
   {
     label: 'Practicas medicas',
     path: '/practices',
     icon: ClipboardList,
-    roles: ['admin', 'receptionist'],
+    permissions: ['CATALOG'],
   },
   {
     label: 'Coberturas',
     path: '/coverages',
     icon: ShieldPlus,
-    roles: ['admin', 'receptionist'],
+    permissions: ['CATALOG'],
+  },
+  {
+    label: 'Usuarios',
+    path: '/users',
+    icon: UserCog,
+    permissions: ['USER_ADMIN'],
   },
 ];
 

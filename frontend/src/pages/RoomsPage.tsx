@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { getDefault } from '@/api/endpoints/default/default';
-import type { BedStatus, RoomCreate, RoomRead, RoomStatus, RoomUpdate } from '@/api/model';
+import type { RoomCreate, RoomRead, RoomStatus, RoomUpdate } from '@/api/model';
 import { Badge, Card, EmptyState, ErrorState, PageHeader, Spinner } from '@/components/ui';
 import Modal from '@/components/Modal';
 import { DoorOpen, Pencil, Plus, Trash2 } from 'lucide-react';
@@ -31,20 +31,6 @@ const emptyForm: RoomUpdate = {
   status: 'AVAILABLE',
 };
 
-function roomDisplayStatus(
-  room: RoomRead,
-  beds: { status: BedStatus }[],
-  availableBedCount: number,
-): RoomStatus {
-  if (beds.length === 0 || availableBedCount > 0) return room.status;
-  if (beds.some((bed) => bed.status === 'PENDING_CLEANING')) return 'PENDING_CLEANING';
-  if (beds.some((bed) => bed.status === 'OCCUPIED')) return 'OCCUPIED';
-  if (beds.some((bed) => bed.status === 'MAINTENANCE')) return 'MAINTENANCE';
-  if (beds.some((bed) => bed.status === 'BLOCKED')) return 'BLOCKED';
-  if (beds.some((bed) => bed.status === 'RESERVED')) return 'RESERVED';
-  return room.status;
-}
-
 export default function RoomsPage() {
   const api = getDefault();
   const queryClient = useQueryClient();
@@ -59,10 +45,6 @@ export default function RoomsPage() {
   const facilitiesQuery = useQuery({
     queryKey: ['facilities'],
     queryFn: () => api.listFacilitiesApiV1FacilitiesGet(),
-  });
-  const bedsQuery = useQuery({
-    queryKey: ['beds'],
-    queryFn: () => api.listBedsApiV1BedsGet(),
   });
 
   const createMutation = useMutation({
@@ -102,7 +84,7 @@ export default function RoomsPage() {
       facility_id: room.facility_id,
       code: room.code,
       ward: room.ward,
-      status: room.status,
+      status: room.administrative_status,
     });
     setModalOpen(true);
   };
@@ -129,12 +111,10 @@ export default function RoomsPage() {
 
   const rooms = roomsQuery.data ?? [];
   const facilities = facilitiesQuery.data ?? [];
-  const beds = bedsQuery.data ?? [];
   const isSaving = createMutation.isPending || updateMutation.isPending;
   const hasError =
     roomsQuery.isError ||
     facilitiesQuery.isError ||
-    bedsQuery.isError ||
     createMutation.isError ||
     updateMutation.isError ||
     deleteMutation.isError;
@@ -155,7 +135,7 @@ export default function RoomsPage() {
         }
       />
 
-      {(roomsQuery.isLoading || facilitiesQuery.isLoading || bedsQuery.isLoading) && <Spinner />}
+      {(roomsQuery.isLoading || facilitiesQuery.isLoading) && <Spinner />}
       {hasError && <ErrorState message="No se pudo completar la operacion de habitaciones." />}
 
       {roomsQuery.data && !hasError && (
@@ -184,10 +164,6 @@ export default function RoomsPage() {
                 <tbody className="divide-y divide-slate-100 bg-white">
                   {rooms.map((room) => {
                     const facility = facilities.find((item) => item.id === room.facility_id);
-                    const roomBeds = beds.filter((bed) => bed.room_id === room.id);
-                    const bedCount = roomBeds.length;
-                    const availableBedCount = roomBeds.filter((bed) => bed.status === 'AVAILABLE').length;
-                    const displayStatus = roomDisplayStatus(room, roomBeds, availableBedCount);
                     return (
                       <tr key={room.id} className="hover:bg-slate-50">
                         <td className="px-5 py-4">
@@ -209,11 +185,13 @@ export default function RoomsPage() {
                         <td className="px-5 py-4">
                           <div className="flex items-center gap-2">
                             <Badge
-                              status={STATUS_LABELS[displayStatus]}
-                              color={STATUS_COLORS[displayStatus]}
+                              status={STATUS_LABELS[room.status]}
+                              color={STATUS_COLORS[room.status]}
                             />
                             <span className="text-sm text-slate-500">
-                              {availableBedCount}/{bedCount} cama(s) disponible(s)
+                              {room.available_beds}/{room.beds} cama(s) disponible(s)
+                              {(room.cleaning_beds ?? 0) > 0 &&
+                                `, ${room.cleaning_beds} en limpieza`}
                             </span>
                           </div>
                         </td>
@@ -228,9 +206,9 @@ export default function RoomsPage() {
                             </button>
                             <button
                               onClick={() => handleDelete(room)}
-                              disabled={deleteMutation.isPending || bedCount > 0}
+                              disabled={deleteMutation.isPending || (room.beds ?? 0) > 0}
                               className="rounded-lg p-2 text-slate-500 transition-colors hover:bg-red-50 hover:text-red-600 disabled:opacity-40"
-                              title={bedCount > 0 ? 'Tiene camas asociadas' : 'Eliminar habitacion'}
+                              title={(room.beds ?? 0) > 0 ? 'Tiene camas asociadas' : 'Eliminar habitacion'}
                             >
                               <Trash2 className="h-4 w-4" />
                             </button>

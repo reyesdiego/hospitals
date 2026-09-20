@@ -45,7 +45,7 @@ UNIT_FIELDS = (
     "biochemical_units",
     "radiology_units",
 )
-FLAGS = ("requires_authorization", "requires_consent")
+FLAGS = ("requires_authorization", "requires_consent", "is_nursing_task")
 
 
 @dataclass(frozen=True)

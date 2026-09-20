@@ -5,7 +5,7 @@ from datetime import date
 
 from fastapi import APIRouter, Response, status
 
-from app.api.dependencies import DbSession
+from app.api.dependencies import CurrentUser, DbSession
 from app.api.presenters import hospitalization_practice_read
 from app.models.practice import Nomenclador, PracticeChapter, PracticeSetting, PracticeType
 from app.schemas.practice import (
@@ -168,11 +168,16 @@ async def register_hospitalization_practice(
     hospitalization_id: uuid.UUID,
     payload: HospitalizationPracticeCreate,
     session: DbSession,
+    user: CurrentUser,
 ):
     """Registra una práctica y el profesional que la indicó. Si se informa
-    ``performed_at`` queda como realizada y se carga a la cuenta de la internación."""
+    ``performed_at`` queda como realizada y se carga a la cuenta de la internación.
 
-    order = await HospitalizationPracticeService(session).register(hospitalization_id, payload)
+    Con el alta médica dada la internación no recibe más cambios, salvo de un administrador."""
+
+    order = await HospitalizationPracticeService(session, user).register(
+        hospitalization_id, payload
+    )
     return await hospitalization_practice_read(session, order)
 
 
@@ -185,11 +190,12 @@ async def perform_hospitalization_practice(
     order_id: uuid.UUID,
     payload: HospitalizationPracticePerformCreate,
     session: DbSession,
+    user: CurrentUser,
 ):
     """La realización es la que genera el cargo, con el valor vigente de la práctica
     para la cobertura de la internación."""
 
-    order = await HospitalizationPracticeService(session).perform(
+    order = await HospitalizationPracticeService(session, user).perform(
         hospitalization_id,
         order_id,
         payload,
@@ -206,10 +212,11 @@ async def cancel_hospitalization_practice(
     order_id: uuid.UUID,
     payload: HospitalizationPracticeCancelCreate,
     session: DbSession,
+    user: CurrentUser,
 ):
     """Anula una práctica indicada y todavía no realizada."""
 
-    order = await HospitalizationPracticeService(session).cancel(
+    order = await HospitalizationPracticeService(session, user).cancel(
         hospitalization_id,
         order_id,
         payload,

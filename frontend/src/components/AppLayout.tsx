@@ -6,17 +6,20 @@ import { NAV_ITEMS } from '@/config/nav';
 import { HeartPulse, LogOut, Menu, X } from 'lucide-react';
 
 export default function AppLayout() {
-  const { user, logout } = useAuth();
+  const { user, logout, can } = useAuth();
   const navigate = useNavigate();
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [userMenuOpen, setUserMenuOpen] = useState(false);
 
   if (!user) return null;
 
-  const items = NAV_ITEMS.filter((item) => item.roles.includes(user.role));
+  // Cada pantalla se ve si el usuario tiene alguno de sus permisos; sin permisos, es de todos.
+  const items = NAV_ITEMS.filter(
+    (item) => item.permissions.length === 0 || item.permissions.some(can),
+  );
 
-  const handleLogout = () => {
-    logout();
+  const handleLogout = async () => {
+    await logout();
     navigate('/login');
   };
 
@@ -81,10 +84,10 @@ export default function AppLayout() {
         <div className="border-t border-slate-700/50 p-4">
           <div className="flex items-center gap-3 rounded-lg bg-slate-800/50 p-3">
             <div className="flex h-10 w-10 items-center justify-center rounded-full bg-gradient-to-br from-teal-400 to-cyan-600 text-sm font-bold text-white">
-              {user.name.charAt(0).toUpperCase()}
+              {user.full_name.charAt(0).toUpperCase()}
             </div>
             <div className="min-w-0 flex-1">
-              <p className="truncate text-sm font-semibold text-white">{user.name}</p>
+              <p className="truncate text-sm font-semibold text-white">{user.full_name}</p>
               <p className="truncate text-xs text-slate-400">{ROLE_LABELS[user.role]}</p>
             </div>
             <button
@@ -115,7 +118,7 @@ export default function AppLayout() {
 
           <div className="ml-auto flex items-center gap-3">
             <div className="hidden text-right sm:block">
-              <p className="text-sm font-semibold text-slate-700">{user.name}</p>
+              <p className="text-sm font-semibold text-slate-700">{user.full_name}</p>
               <p className="text-xs text-slate-400">{user.email}</p>
             </div>
             <div className="relative">
@@ -123,7 +126,7 @@ export default function AppLayout() {
                 onClick={() => setUserMenuOpen(!userMenuOpen)}
                 className="flex h-10 w-10 items-center justify-center rounded-full bg-gradient-to-br from-teal-400 to-cyan-600 text-sm font-bold text-white shadow-md"
               >
-                {user.name.charAt(0).toUpperCase()}
+                {user.full_name.charAt(0).toUpperCase()}
               </button>
               {userMenuOpen && (
                 <div
@@ -131,7 +134,7 @@ export default function AppLayout() {
                   onMouseLeave={() => setUserMenuOpen(false)}
                 >
                   <div className="border-b border-slate-100 px-4 py-2">
-                    <p className="text-sm font-semibold text-slate-700">{user.name}</p>
+                    <p className="text-sm font-semibold text-slate-700">{user.full_name}</p>
                     <p className="text-xs text-slate-400">{ROLE_LABELS[user.role]}</p>
                   </div>
                   <button

@@ -3,6 +3,8 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { getHospitalizationWorkflow } from '@/api/endpoints/hospitalization-workflow/hospitalization-workflow';
 import type { ChargeItemRead, HospitalizationRead } from '@/api/model';
 import { invalidateHospitalization } from '@/api/queryKeys';
+import { useAuth } from '@/auth/AuthContext';
+import { isPostDischarge } from './lock';
 import Modal from '@/components/Modal';
 import {
   ActionButton,
@@ -35,6 +37,7 @@ export function AccountCard({
 }) {
   const api = getHospitalizationWorkflow();
   const queryClient = useQueryClient();
+  const { user } = useAuth();
   const [voiding, setVoiding] = useState<ChargeItemRead | null>(null);
   const [reason, setReason] = useState('');
   const [error, setError] = useState<string | null>(null);
@@ -79,7 +82,11 @@ export function AccountCard({
   }
 
   const items = account.charge_items ?? [];
-  const canEdit = canManage && EDITABLE_STATUSES.includes(account.status);
+  // Despues del alta medica la cuenta solo la corrige un admin.
+  const canEdit =
+    canManage &&
+    EDITABLE_STATUSES.includes(account.status) &&
+    (!isPostDischarge(hosp.status) || user?.role === 'ADMIN');
 
   return (
     <Card className="p-6">

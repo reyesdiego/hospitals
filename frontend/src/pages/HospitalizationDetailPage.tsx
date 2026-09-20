@@ -5,6 +5,7 @@ import { getHospitalizationWorkflow } from '@/api/endpoints/hospitalization-work
 import { useAuth } from '@/auth/AuthContext';
 import AccountCard from '@/components/hospitalization/AccountCard';
 import AdmissionCard from '@/components/hospitalization/AdmissionCard';
+import { isPostDischarge } from '@/components/hospitalization/lock';
 import BedManagementCard from '@/components/hospitalization/BedManagementCard';
 import CareTeamCard from '@/components/hospitalization/CareTeamCard';
 import DischargeCard from '@/components/hospitalization/DischargeCard';
@@ -14,7 +15,7 @@ import PracticesCard from '@/components/hospitalization/PracticesCard';
 import ServiceAssignmentsCard from '@/components/hospitalization/ServiceAssignmentsCard';
 import { Card, ErrorState, InfoRow, PageHeader, SectionTitle, Spinner } from '@/components/ui';
 import { formatDate } from '@/utils/format';
-import { ArrowLeft, FileText, User } from 'lucide-react';
+import { ArrowLeft, FileText, Lock, User } from 'lucide-react';
 
 function ageAtDate(birthDate: string | null | undefined, referenceDate: string | null | undefined) {
   if (!birthDate || !referenceDate) return null;
@@ -31,11 +32,12 @@ function ageAtDate(birthDate: string | null | undefined, referenceDate: string |
 export default function HospitalizationDetailPage() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
-  const { user } = useAuth();
+  const { user, can } = useAuth();
   const api = getDefault();
   const workflowApi = getHospitalizationWorkflow();
 
-  const canManage = Boolean(user && ['admin', 'doctor', 'nurse'].includes(user.role));
+  const canManage = can('HOSPITALIZATION');
+  const isAdmin = user?.role === 'ADMIN';
 
   const hospitalizationQuery = useQuery({
     queryKey: ['hospitalization', id],
@@ -87,6 +89,22 @@ export default function HospitalizationDetailPage() {
       </button>
 
       <PageHeader title={patientName} subtitle={`Internacion #${hosp.id.slice(0, 8)}`} />
+
+      {isPostDischarge(hosp.status) && (
+        <Card className="mb-6 flex items-start gap-3 border-amber-200 bg-amber-50 px-5 py-4">
+          <Lock className="mt-0.5 h-5 w-5 shrink-0 text-amber-600" />
+          <div>
+            <p className="text-sm font-semibold text-amber-800">
+              Internacion con alta medica: cerrada a modificaciones
+            </p>
+            <p className="mt-0.5 text-sm text-amber-700">
+              {isAdmin
+                ? 'Como administrador podes modificarla igual. Cada cambio queda registrado en el historial de la internacion.'
+                : 'Lo que se cargue ahora no lo vio el medico que firmo el alta. Si hace falta corregir algo, pedilo a un administrador.'}
+            </p>
+          </div>
+        </Card>
+      )}
 
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
         <div className="space-y-6 lg:col-span-2">

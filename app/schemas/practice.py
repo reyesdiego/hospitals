@@ -36,6 +36,8 @@ class MedicalPracticeCreate(BaseModel):
     radiology_units: Decimal = Field(default=Decimal(0), ge=0, max_digits=10, decimal_places=2)
     requires_authorization: bool = False
     requires_consent: bool = False
+    # La ejecuta enfermería: aparece en su panel de tareas.
+    is_nursing_task: bool = False
     # Carencia con la que la práctica entra en cualquier plan, salvo que el plan pacte otra.
     default_waiting_period_days: int = Field(default=0, ge=0, le=3650)
     is_active: bool = True
@@ -64,6 +66,7 @@ class MedicalPracticeRead(ORMModel):
     radiology_units: Decimal
     requires_authorization: bool
     requires_consent: bool
+    is_nursing_task: bool
     default_waiting_period_days: int
     is_active: bool
     valid_from: date | None
@@ -230,6 +233,8 @@ class HospitalizationPracticeRead(ORMModel):
     practice_name: str
     prescribed_by_id: uuid.UUID
     performed_by_id: uuid.UUID | None
+    performed_by_user_id: uuid.UUID | None
+    performed_by_user_name: str | None
     service_id: uuid.UUID | None
     charge_item_id: uuid.UUID | None
     status: PracticeOrderStatus
@@ -258,3 +263,27 @@ class PlanCoverageCheckRead(BaseModel):
     available_from: date | None
     health_plan_id: uuid.UUID | None
     message: str | None
+
+
+class NursingTaskRead(BaseModel):
+    """Una tarea del panel de enfermería, con el paciente y dónde está."""
+
+    id: uuid.UUID
+    hospitalization_id: uuid.UUID
+    practice_id: uuid.UUID
+    practice_code: str
+    practice_name: str
+    status: PracticeOrderStatus
+    quantity: Decimal
+    patient_id: uuid.UUID
+    patient_name: str
+    ward: str | None
+    room_code: str | None
+    bed_code: str | None
+    prescribed_by: str | None
+    prescribed_at: datetime
+    performed_at: datetime | None
+    performed_by: str | None
+    cancelled_at: datetime | None
+    indication: str | None
+    notes: str | None
