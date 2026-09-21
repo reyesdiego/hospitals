@@ -8,7 +8,9 @@ import type {
   HospitalizationPracticeCancelCreate,
   HospitalizationPracticePerformCreate,
   HospitalizationPracticeRead,
+  ListMedicationRoundApiV1NursingMedicationsGetParams,
   ListNursingTasksApiV1NursingTasksGetParams,
+  MedicationRoundRead,
   NursingTaskRead
 } from '../../model';
 
@@ -68,7 +70,26 @@ const cancelNursingTaskApiV1NursingTasksOrderIdCancelPost = (
     },
       options);
     }
-  return {listNursingTasksApiV1NursingTasksGet,performNursingTaskApiV1NursingTasksOrderIdPerformPost,cancelNursingTaskApiV1NursingTasksOrderIdCancelPost}};
+  /**
+ * La vuelta de medicación: indicaciones activas de internaciones activas, con sus
+ * horarios calculados.
+ *
+ * Cada indicación trae la línea de tiempo de la ventana —lo que se dio, lo que se omitió
+ * y lo que falta—, el próximo horario y si está vencida. Sin ventana son las doce horas
+ * para atrás y las doce para adelante. Primero lo vencido.
+ * @summary List Medication Round
+ */
+const listMedicationRoundApiV1NursingMedicationsGet = (
+    params?: ListMedicationRoundApiV1NursingMedicationsGetParams,
+ options?: SecondParameter<typeof customInstance<MedicationRoundRead[]>>,) => {
+      return customInstance<MedicationRoundRead[]>(
+      {url: `/api/v1/nursing-medications`, method: 'GET',
+        params
+    },
+      options);
+    }
+  return {listNursingTasksApiV1NursingTasksGet,performNursingTaskApiV1NursingTasksOrderIdPerformPost,cancelNursingTaskApiV1NursingTasksOrderIdCancelPost,listMedicationRoundApiV1NursingMedicationsGet}};
 export type ListNursingTasksApiV1NursingTasksGetResult = NonNullable<Awaited<ReturnType<ReturnType<typeof getNursing>['listNursingTasksApiV1NursingTasksGet']>>>
 export type PerformNursingTaskApiV1NursingTasksOrderIdPerformPostResult = NonNullable<Awaited<ReturnType<ReturnType<typeof getNursing>['performNursingTaskApiV1NursingTasksOrderIdPerformPost']>>>
 export type CancelNursingTaskApiV1NursingTasksOrderIdCancelPostResult = NonNullable<Awaited<ReturnType<ReturnType<typeof getNursing>['cancelNursingTaskApiV1NursingTasksOrderIdCancelPost']>>>
+export type ListMedicationRoundApiV1NursingMedicationsGetResult = NonNullable<Awaited<ReturnType<ReturnType<typeof getNursing>['listMedicationRoundApiV1NursingMedicationsGet']>>>
