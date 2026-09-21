@@ -49,6 +49,9 @@ class DiagnosisCodeRead(ORMModel):
     is_active: bool
     notes: str | None
     created_at: datetime
+    #: Cuántos códigos cuelgan de este. La lista se recorre como un árbol y sin esto
+    #: habría que abrir cada rama para descubrir que está vacía.
+    child_count: int = 0
 
     @computed_field
     @property

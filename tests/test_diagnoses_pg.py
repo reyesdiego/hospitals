@@ -154,3 +154,23 @@ def test_a_diagnosis_with_children_is_not_deleted():
 
     assert status_code == 409
     assert remaining == ["J00-J99", "J09-J18", "J15"]
+
+
+def test_the_list_says_how_many_codes_hang_from_each_one():
+    """El árbol se recorre rama por rama: sin esto habría que abrir cada una para
+    descubrir que está vacía."""
+
+    async def case(factory):
+        async with factory() as session:
+            await load_branch(session)
+            service = DiagnosisService(session)
+            chapters = await service.list_codes(level=DiagnosisLevel.CHAPTER)
+            return await service.children_counts(
+                [entry.code for entry in chapters] + ["J15", "J159"]
+            )
+
+    counts = run_db(case)
+
+    assert counts == {"J00-J99": 1, "J15": 1}
+    # La hoja no figura: no tiene nada colgando.
+    assert "J159" not in counts

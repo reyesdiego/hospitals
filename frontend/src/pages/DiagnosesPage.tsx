@@ -3,6 +3,11 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { getDiagnoses } from '@/api/endpoints/diagnoses/diagnoses';
 import type { DiagnosisCodeCreate, DiagnosisCodeRead, DiagnosisLevel } from '@/api/model';
 import Modal from '@/components/Modal';
+import DiagnosisRow from '@/components/diagnoses/DiagnosisTree';
+import {
+  DIAGNOSIS_LEVEL_COLORS,
+  DIAGNOSIS_LEVEL_LABELS,
+} from '@/config/diagnosisLabels';
 import {
   ActionButton,
   Badge,
@@ -17,20 +22,6 @@ import {
 } from '@/components/ui';
 import { apiErrorMessage } from '@/utils/api-error';
 import { Pencil, Plus, Search, Trash2 } from 'lucide-react';
-
-const LEVEL_LABELS: Record<DiagnosisLevel, string> = {
-  CHAPTER: 'Capitulo',
-  BLOCK: 'Grupo',
-  CATEGORY: 'Categoria',
-  SUBCATEGORY: 'Subcategoria',
-};
-
-const LEVEL_COLORS: Record<DiagnosisLevel, string> = {
-  CHAPTER: 'bg-slate-100 text-slate-600',
-  BLOCK: 'bg-slate-100 text-slate-600',
-  CATEGORY: 'bg-teal-50 text-teal-700',
-  SUBCATEGORY: 'bg-cyan-50 text-cyan-700',
-};
 
 /** El catalogo tiene mas de catorce mil codigos: se muestra una tanda por busqueda. */
 const PAGE_SIZE = 100;
@@ -62,8 +53,12 @@ export default function DiagnosesPage() {
     queryFn: () => api.listDiagnosesApiV1DiagnosesGet({ level: 'CHAPTER', limit: 50 }),
   });
 
+  /** Buscar o filtrar por nivel saca del arbol: lo que se quiere ver es la coincidencia,
+   * no dónde cuelga. Sin eso, el catalogo se recorre como lo que es, un arbol. */
+  const flat = search.trim().length > 0 || level !== '';
+
   const codesQuery = useQuery({
-    queryKey: ['diagnoses', search, chapter, level, onlyActive],
+    queryKey: ['diagnoses', 'list', search, chapter, level, onlyActive],
     queryFn: () =>
       api.listDiagnosesApiV1DiagnosesGet({
         search: search.trim() || undefined,
@@ -72,6 +67,19 @@ export default function DiagnosesPage() {
         only_active: onlyActive,
         limit: PAGE_SIZE,
       }),
+    enabled: flat,
+  });
+
+  /** La raiz del arbol: los capitulos, o el que se haya elegido en el filtro. */
+  const rootsQuery = useQuery({
+    queryKey: ['diagnoses', 'roots', chapter, onlyActive],
+    queryFn: () =>
+      api.listDiagnosesApiV1DiagnosesGet(
+        chapter
+          ? { parent_code: chapter, only_active: onlyActive, limit: 500 }
+          : { level: 'CHAPTER', only_active: onlyActive, limit: 50 },
+      ),
+    enabled: !flat,
   });
 
   const invalidate = () => queryClient.invalidateQueries({ queryKey: ['diagnoses'] });
@@ -157,6 +165,24 @@ export default function DiagnosesPage() {
 
   const chapters = chaptersQuery.data ?? [];
   const codes = codesQuery.data ?? [];
+  const roots = rootsQuery.data ?? [];
+  const treeActions = {
+    canManage: true,
+    onlyActive,
+    onEdit: openEdit,
+    onRemove: remove,
+    onAddChild: (parent: DiagnosisCodeRead) => {
+      setEditing(null);
+      setForm({
+        ...emptyForm,
+        level: parent.level === 'CHAPTER' ? 'BLOCK' : parent.level === 'BLOCK' ? 'CATEGORY' : 'SUBCATEGORY',
+        parent_code: parent.code,
+        chapter_code: parent.chapter_code ?? parent.code,
+      });
+      setError(null);
+      setModalOpen(true);
+    },
+  };
 
   return (
     <div>
@@ -203,7 +229,7 @@ export default function DiagnosesPage() {
             className={inputClass}
           >
             <option value="">Todos los niveles</option>
-            {Object.entries(LEVEL_LABELS).map(([value, label]) => (
+            {Object.entries(DIAGNOSIS_LEVEL_LABELS).map(([value, label]) => (
               <option key={value} value={value}>
                 {label}
               </option>
@@ -223,10 +249,34 @@ export default function DiagnosesPage() {
 
       <FormError message={error} />
 
-      {codesQuery.isLoading && <Spinner />}
-      {codesQuery.isError && <ErrorState message="No se pudo cargar el catalogo CIE-10." />}
+      {(codesQuery.isLoading || rootsQuery.isLoading) && <Spinner />}
+      {(codesQuery.isError || rootsQuery.isError) && (
+        <ErrorState message="No se pudo cargar el catalogo CIE-10." />
+      )}
 
-      {codesQuery.data && (
+      {!flat && rootsQuery.data && (
+        <Card className="overflow-hidden">
+          <div className="flex items-center gap-3 border-b border-slate-100 bg-slate-50 px-3 py-2 text-xs font-semibold uppercase text-slate-500">
+            <span className="w-5" />
+            <span className="w-24">Codigo</span>
+            <span className="flex-1">Diagnostico</span>
+            <span>Nivel</span>
+          </div>
+          {roots.length === 0 ? (
+            <EmptyState message="No hay codigos cargados en el catalogo." />
+          ) : (
+            roots.map((entry) => (
+              <DiagnosisRow key={entry.id} entry={entry} depth={0} actions={treeActions} />
+            ))
+          )}
+          <p className="border-t border-slate-100 px-5 py-3 text-xs text-slate-400">
+            Capitulo → grupo → categoria → subcategoria. Cada rama se abre al desplegarla;
+            para ir directo a un codigo, buscalo.
+          </p>
+        </Card>
+      )}
+
+      {flat && codesQuery.data && (
         <Card className="overflow-hidden">
           {codes.length === 0 ? (
             <EmptyState message="Ningun diagnostico coincide con la busqueda." />
@@ -265,8 +315,8 @@ export default function DiagnosesPage() {
                       </td>
                       <td className="px-5 py-3">
                         <Badge
-                          status={LEVEL_LABELS[entry.level]}
-                          color={LEVEL_COLORS[entry.level]}
+                          status={DIAGNOSIS_LEVEL_LABELS[entry.level]}
+                          color={DIAGNOSIS_LEVEL_COLORS[entry.level]}
                         />
                       </td>
                       <td className="px-5 py-3 text-xs text-slate-500">
@@ -337,7 +387,7 @@ export default function DiagnosesPage() {
                 }
                 className={inputClass}
               >
-                {Object.entries(LEVEL_LABELS).map(([value, label]) => (
+                {Object.entries(DIAGNOSIS_LEVEL_LABELS).map(([value, label]) => (
                   <option key={value} value={value}>
                     {label}
                   </option>

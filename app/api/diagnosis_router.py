@@ -39,7 +39,8 @@ async def list_diagnoses(
     Son más de catorce mil códigos: la respuesta viene acotada por ``limit``.
     """
 
-    return await DiagnosisService(session).list_codes(
+    service = DiagnosisService(session)
+    entries = await service.list_codes(
         search=search,
         chapter_code=chapter_code,
         parent_code=parent_code,
@@ -48,6 +49,13 @@ async def list_diagnoses(
         only_codifiable=only_codifiable,
         limit=limit,
     )
+    children = await service.children_counts([entry.code for entry in entries])
+    return [
+        DiagnosisCodeRead.model_validate(entry).model_copy(
+            update={"child_count": children.get(entry.code, 0)}
+        )
+        for entry in entries
+    ]
 
 
 @router.post("/diagnoses", response_model=DiagnosisCodeRead, status_code=201)

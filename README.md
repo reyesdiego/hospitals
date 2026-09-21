@@ -195,6 +195,11 @@ Capítulos y grupos ordenan la lista pero no son diagnósticos: al paciente se l
 categoría o una subcategoría. Son más de catorce mil códigos, así que `GET /api/v1/diagnoses`
 se busca (`search` por código o texto) y responde acotado por `limit`.
 
+La pantalla lo muestra como el árbol que es —capítulo → grupo → categoría → subcategoría—,
+pidiendo cada rama al desplegarla; `parent_code` trae los hijos de un código y `child_count`
+dice cuántos cuelgan, para no ofrecer ramas vacías. Buscar o filtrar por nivel sale del
+árbol y devuelve la lista de coincidencias, que es lo que se quiere ver al buscar.
+
 `hospitalization_diagnoses` es el diagnóstico del paciente, y distingue dos momentos que
 conviven: el **de ingreso**, presuntivo, que se carga con la admisión, y el **de egreso**,
 que es el que firma el médico con el alta. La diferencia entre lo que se sospechó y lo que

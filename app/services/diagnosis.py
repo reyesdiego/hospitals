@@ -73,6 +73,20 @@ class DiagnosisService:
             stmt = stmt.where(DiagnosisCode.is_active.is_(True))
         return list((await self.session.scalars(stmt)).all())
 
+    async def children_counts(self, codes: list[str]) -> dict[str, int]:
+        """Cuántos códigos cuelgan de cada uno, para poder mostrar el árbol."""
+
+        if not codes:
+            return {}
+        rows = (
+            await self.session.execute(
+                select(DiagnosisCode.parent_code, func.count())
+                .where(DiagnosisCode.parent_code.in_(codes))
+                .group_by(DiagnosisCode.parent_code)
+            )
+        ).all()
+        return {parent: total for parent, total in rows}
+
     async def get(self, diagnosis_id: uuid.UUID) -> DiagnosisCode:
         code = await self.session.get(DiagnosisCode, diagnosis_id)
         if not code:

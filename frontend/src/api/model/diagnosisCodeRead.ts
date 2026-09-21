@@ -16,6 +16,7 @@ export interface DiagnosisCodeRead {
   is_active: boolean;
   notes: string | null;
   created_at: string;
+  child_count?: number;
   /** Si se le puede asentar a un paciente: capítulos y grupos solo agrupan. */
   readonly codifiable: boolean;
 }
