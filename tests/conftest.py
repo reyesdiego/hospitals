@@ -3,6 +3,12 @@
 Database specific behaviour (partial unique indexes, SELECT FOR UPDATE) cannot be
 exercised without PostgreSQL, so these tests run against a dedicated database and are
 skipped when the server configured in the settings is not reachable.
+
+La base de pruebas se rehace entera una vez por corrida. ``create_all`` agrega tablas
+nuevas pero no columnas ni valores de enum, así que una base vieja hace fallar las pruebas
+de un modelo que cambió, con un error que no tiene nada que ver con lo que se está
+probando. Rehacerla cuesta alrededor de un segundo y no deja lugar a esa confusión; para
+saltear el paso mientras se itera sobre una misma prueba, ``HOSPITAL_TEST_KEEP_DB=1``.
 """
 
 import asyncio
@@ -29,6 +35,10 @@ _schema_ready = False
 _postgres_available: bool | None = None
 
 
+#: Conservar la base entre corridas, para iterar sobre una prueba sin rehacer el esquema.
+KEEP_DATABASE = os.getenv("HOSPITAL_TEST_KEEP_DB", "").strip().lower() in {"1", "true", "yes"}
+
+
 async def _create_schema() -> None:
     admin = create_async_engine(ADMIN_DATABASE_URL, isolation_level="AUTOCOMMIT")
     try:
@@ -37,6 +47,12 @@ async def _create_schema() -> None:
                 text("SELECT 1 FROM pg_database WHERE datname = :name"),
                 {"name": TEST_DATABASE},
             )
+            if exists and not KEEP_DATABASE:
+                # ``FORCE`` echa a las conexiones que hayan quedado de una corrida anterior.
+                await connection.execute(
+                    text(f'DROP DATABASE "{TEST_DATABASE}" WITH (FORCE)')
+                )
+                exists = False
             if not exists:
                 await connection.execute(text(f'CREATE DATABASE "{TEST_DATABASE}"'))
     finally:

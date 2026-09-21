@@ -20,6 +20,10 @@ include = ["app*"]
 [tool.setuptools.package-data]
 "app.db.seeds" = ["*.csv"]
 
+[tool.pytest.ini_options]
+# El paquete se importa desde el repo: ``pytest`` sin instalar nada y sin PYTHONPATH.
+pythonpath = ["."]
+
 [tool.ruff]
 line-length = 100
 target-version = "py312"
@@ -27,5 +31,7 @@ target-version = "py312"
 [dependency-groups]
 dev = [
     "pytest>=8.4.2",
+    # Lo usa el TestClient de Starlette en las pruebas de contrato.
+    "httpx>=0.28,<1",
     "ruff>=0.16.1",
 ]
