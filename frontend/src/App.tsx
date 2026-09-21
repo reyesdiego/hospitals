@@ -13,6 +13,7 @@ import RoomsPage from '@/pages/RoomsPage';
 import FacilitiesPage from '@/pages/FacilitiesPage';
 import DiagnosesPage from '@/pages/DiagnosesPage';
 import MorbidityReportPage from '@/pages/MorbidityReportPage';
+import PatientRecordPage from '@/pages/PatientRecordPage';
 import ServicesPage from '@/pages/ServicesPage';
 import MedicalPracticesPage from '@/pages/MedicalPracticesPage';
 import CoveragesPage from '@/pages/CoveragesPage';
@@ -92,6 +93,10 @@ function AppRoutes() {
       >
         <Route path="/dashboard" element={<DashboardPage />} />
         <Route path="/patients" element={screen(['ADMISSION'], <PatientsPage />)} />
+        <Route
+          path="/patients/:id"
+          element={screen(['ADMISSION', 'HOSPITALIZATION'], <PatientRecordPage />)}
+        />
         <Route path="/professionals" element={screen(['CATALOG'], <ProfessionalsPage />)} />
         <Route path="/admissions" element={screen(['ADMISSION'], <AdmissionPanelPage />)} />
         <Route path="/beds" element={screen(['BED_CLEANING', 'BED_MANAGEMENT'], <BedsPage />)} />

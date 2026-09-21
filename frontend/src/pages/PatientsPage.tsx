@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { Link } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { getDefault } from '@/api/endpoints/default/default';
 import type { PatientCreate, PatientRead, PatientUpdate } from '@/api/model';
@@ -6,7 +7,7 @@ import { useAuth } from '@/auth/AuthContext';
 import { PageHeader, Card, Spinner, ErrorState, EmptyState } from '@/components/ui';
 import Modal from '@/components/Modal';
 import PatientCoveragesModal from '@/components/coverage/PatientCoveragesModal';
-import { Pencil, Search, ShieldPlus, Trash2, UserPlus } from 'lucide-react';
+import { FileText, Pencil, Search, ShieldPlus, Trash2, UserPlus } from 'lucide-react';
 
 const DOC_TYPES = ['DNI', 'NIE', 'PASSPORT', 'CIF'];
 
@@ -192,6 +193,13 @@ export default function PatientsPage() {
                       </td>
                       <td className="px-5 py-4">
                         <div className="flex justify-end gap-2">
+                          <Link
+                            to={`/patients/${patient.id}`}
+                            className="rounded-lg p-2 text-slate-500 transition-colors hover:bg-teal-50 hover:text-teal-700"
+                            title="Historia clinica"
+                          >
+                            <FileText className="h-4 w-4" />
+                          </Link>
                           <button
                             onClick={() => setCoveragesOf(patient)}
                             className="rounded-lg p-2 text-slate-500 transition-colors hover:bg-teal-50 hover:text-teal-700"

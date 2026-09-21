@@ -12,6 +12,7 @@ from app.api.dependencies import DbSession, enforce_permissions
 from app.api.diagnosis_router import router as diagnosis_router
 from app.api.hospitalization_router import router as hospitalization_router
 from app.api.nursing_router import router as nursing_router
+from app.api.patient_record_router import router as patient_record_router
 from app.api.payer_mock_router import router as payer_mock_router
 from app.api.practice_router import router as practice_router
 from app.api.prescription_router import router as prescription_router
@@ -688,4 +689,5 @@ api_router.include_router(prescription_router, dependencies=protected)
 api_router.include_router(payer_mock_router, dependencies=protected)
 api_router.include_router(diagnosis_router, dependencies=protected)
 api_router.include_router(report_router, dependencies=protected)
+api_router.include_router(patient_record_router, dependencies=protected)
 api_router.include_router(treatment_router, dependencies=protected)
