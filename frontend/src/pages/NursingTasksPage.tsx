@@ -5,6 +5,7 @@ import { getDefault } from '@/api/endpoints/default/default';
 import { getNursing } from '@/api/endpoints/nursing/nursing';
 import type { NursingTaskRead } from '@/api/model';
 import Modal from '@/components/Modal';
+import MedicationTimeline from '@/components/nursing/MedicationTimeline';
 import {
   ActionButton,
   Badge,
@@ -143,6 +144,8 @@ export default function NursingTasksPage() {
           ) : undefined
         }
       />
+
+      <MedicationTimeline serviceId={serviceId} />
 
       <Card className="mb-4 flex flex-col gap-3 p-4 lg:flex-row lg:flex-wrap lg:items-center">
         <label className="flex items-center gap-2 text-sm text-slate-600">
