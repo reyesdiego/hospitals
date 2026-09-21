@@ -71,6 +71,32 @@ WRITE_PERMISSIONS: dict[tuple[str, str], Permission] = {
         "/hospitalizations/{hospitalization_id}/authorizations",
     ): Permission.HOSPITALIZATION,
     ("POST", "/hospitalizations/{hospitalization_id}/diagnoses"): Permission.HOSPITALIZATION,
+    ("POST", "/hospitalizations/{hospitalization_id}/treatments"): Permission.HOSPITALIZATION,
+    (
+        "PUT",
+        "/hospitalizations/{hospitalization_id}/treatments/{treatment_id}",
+    ): Permission.HOSPITALIZATION,
+    (
+        "POST",
+        "/hospitalizations/{hospitalization_id}/treatments/{treatment_id}/stop",
+    ): Permission.HOSPITALIZATION,
+    # El registro de administración es tarea de enfermería, no de la conducción médica.
+    (
+        "POST",
+        "/hospitalizations/{hospitalization_id}/treatments/{treatment_id}/administrations",
+    ): Permission.NURSING_TASKS,
+    (
+        "POST",
+        (
+            "/hospitalizations/{hospitalization_id}/treatments/{treatment_id}"
+            "/administrations/{administration_id}/void"
+        ),
+    ): Permission.NURSING_TASKS,
+    ("POST", "/hospitalizations/{hospitalization_id}/notes"): Permission.HOSPITALIZATION,
+    (
+        "POST",
+        "/hospitalizations/{hospitalization_id}/notes/{note_id}/void",
+    ): Permission.HOSPITALIZATION,
     (
         "PUT",
         "/hospitalizations/{hospitalization_id}/diagnoses/{entry_id}",

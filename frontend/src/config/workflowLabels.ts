@@ -14,10 +14,15 @@ import type {
   AccountStatus,
   ChargeCategory,
   ChargeItemStatus,
+  ClinicalNoteKind,
   HospitalizationEventType,
+  MedicationRoute,
   PaymentMethod,
   PracticeOrderStatus,
   ResponsibleParty,
+  ScheduleKind,
+  TreatmentKind,
+  TreatmentStatus,
 } from '@/api/model';
 
 export const RESERVATION_STATUS_LABELS: Record<BedReservationStatus, string> = {
@@ -82,6 +87,11 @@ export const EVENT_TYPE_LABELS: Record<HospitalizationEventType, string> = {
   BED_RELEASED: 'Cama liberada',
   DIAGNOSIS_RECORDED: 'Diagnostico asentado',
   DIAGNOSIS_REMOVED: 'Diagnostico quitado',
+  TREATMENT_STARTED: 'Indicacion iniciada',
+  TREATMENT_STOPPED: 'Indicacion cerrada',
+  TREATMENT_ADMINISTERED: 'Toma registrada',
+  CLINICAL_NOTE_ADDED: 'Nota de evolucion',
+  CLINICAL_NOTE_VOIDED: 'Nota anulada',
   PRACTICE_ORDERED: 'Practica indicada',
   PRACTICE_PERFORMED: 'Practica realizada',
   PRACTICE_CANCELLED: 'Practica anulada',
@@ -233,4 +243,54 @@ export const PAYMENT_METHOD_LABELS: Record<PaymentMethod, string> = {
 export const CHARGE_ITEM_STATUS_LABELS: Record<ChargeItemStatus, string> = {
   ACTIVE: 'Vigente',
   VOID: 'Anulado',
+};
+
+export const TREATMENT_KIND_LABELS: Record<TreatmentKind, string> = {
+  MEDICATION: 'Medicacion',
+  TREATMENT: 'Tratamiento',
+};
+
+export const TREATMENT_STATUS_LABELS: Record<TreatmentStatus, string> = {
+  ACTIVE: 'En curso',
+  SUSPENDED: 'Suspendida',
+  COMPLETED: 'Cumplida',
+};
+
+export const TREATMENT_STATUS_COLORS: Record<TreatmentStatus, string> = {
+  ACTIVE: 'bg-teal-50 text-teal-700',
+  SUSPENDED: 'bg-amber-50 text-amber-700',
+  COMPLETED: 'bg-slate-100 text-slate-600',
+};
+
+export const MEDICATION_ROUTE_LABELS: Record<MedicationRoute, string> = {
+  ORAL: 'Via oral',
+  INTRAVENOUS: 'Endovenosa',
+  INTRAMUSCULAR: 'Intramuscular',
+  SUBCUTANEOUS: 'Subcutanea',
+  INHALATORY: 'Inhalatoria',
+  TOPICAL: 'Topica',
+  RECTAL: 'Rectal',
+  OTHER: 'Otra',
+};
+
+export const CLINICAL_NOTE_KIND_LABELS: Record<ClinicalNoteKind, string> = {
+  EVOLUTION: 'Evolucion',
+  OBSERVATION: 'Observacion',
+  INTERCONSULTATION: 'Interconsulta',
+  NURSING: 'Enfermeria',
+};
+
+export const CLINICAL_NOTE_KIND_COLORS: Record<ClinicalNoteKind, string> = {
+  EVOLUTION: 'bg-teal-50 text-teal-700',
+  OBSERVATION: 'bg-slate-100 text-slate-600',
+  INTERCONSULTATION: 'bg-cyan-50 text-cyan-700',
+  NURSING: 'bg-violet-50 text-violet-700',
+};
+
+export const SCHEDULE_KIND_LABELS: Record<ScheduleKind, string> = {
+  INTERVAL: 'Cada N horas',
+  TIMES: 'Horarios fijos',
+  ONCE: 'Unica vez',
+  AS_NEEDED: 'A demanda',
+  CONTINUOUS: 'Continuo',
 };

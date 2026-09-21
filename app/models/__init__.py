@@ -71,11 +71,24 @@ from app.models.prescription import DischargePrescription, PrescriptionKind
 from app.models.professional import Professional, ProfessionalSpecialty, Specialty
 from app.models.room import Room, RoomStatus
 from app.models.service import Service
+from app.models.treatment import (
+    AdministrationStatus,
+    ClinicalNoteKind,
+    ClinicalNoteStatus,
+    HospitalizationNote,
+    HospitalizationTreatment,
+    MedicationRoute,
+    ScheduleKind,
+    TreatmentAdministration,
+    TreatmentKind,
+    TreatmentStatus,
+)
 from app.models.user import User, UserSession
 
 __all__ = [
     "Account",
     "AccountStatus",
+    "AdministrationStatus",
     "Admission",
     "AdmissionConsent",
     "AdmissionOrigin",
@@ -98,6 +111,8 @@ __all__ = [
     "ChargeCategory",
     "ChargeItem",
     "ChargeItemStatus",
+    "ClinicalNoteKind",
+    "ClinicalNoteStatus",
     "ConsentType",
     "CoverageStatus",
     "DiagnosisCode",
@@ -119,11 +134,14 @@ __all__ = [
     "HospitalizationDiagnosis",
     "HospitalizationEvent",
     "HospitalizationEventType",
+    "HospitalizationNote",
     "HospitalizationPractice",
     "HospitalizationServiceAssignment",
     "HospitalizationStatus",
+    "HospitalizationTreatment",
     "MedicalPractice",
     "MedicalPracticeTariff",
+    "MedicationRoute",
     "Nomenclador",
     "Patient",
     "PatientContact",
@@ -145,9 +163,13 @@ __all__ = [
     "ResponsibleParty",
     "Room",
     "RoomStatus",
+    "ScheduleKind",
     "Service",
     "Specialty",
     "TransferStatus",
+    "TreatmentAdministration",
+    "TreatmentKind",
+    "TreatmentStatus",
     "User",
     "UserSession",
 ]

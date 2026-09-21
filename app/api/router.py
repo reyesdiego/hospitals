@@ -18,6 +18,7 @@ from app.api.prescription_router import router as prescription_router
 from app.api.presenters import bed_read, room_read
 from app.api.registry_router import router as registry_router
 from app.api.report_router import router as report_router
+from app.api.treatment_router import router as treatment_router
 from app.core.exceptions import DomainError
 from app.models.admission import (
     Admission,
@@ -687,3 +688,4 @@ api_router.include_router(prescription_router, dependencies=protected)
 api_router.include_router(payer_mock_router, dependencies=protected)
 api_router.include_router(diagnosis_router, dependencies=protected)
 api_router.include_router(report_router, dependencies=protected)
+api_router.include_router(treatment_router, dependencies=protected)
