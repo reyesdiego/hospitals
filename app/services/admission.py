@@ -20,6 +20,7 @@ from app.models.audit import HospitalizationEventType
 from app.models.authorization import Authorization, AuthorizationState, AuthorizationType
 from app.models.bed import Bed, BedAssignment
 from app.models.coverage import PatientCoverage
+from app.models.diagnosis import DiagnosisStage
 from app.models.facility import Facility
 from app.models.hospitalization import (
     OPEN_HOSPITALIZATION_STATUSES,
@@ -33,6 +34,7 @@ from app.models.service import Service
 from app.schemas.domain import AdministrativeDischargeCreate, AdmissionCreate
 from app.services.audit import record_event
 from app.services.bed_assignment import BedAssignmentService
+from app.services.diagnosis import record_diagnoses
 from app.services.hospitalization import HospitalizationService
 from app.services.registry import build_coverage
 
@@ -132,6 +134,16 @@ class AdmissionWorkflowService:
                 responsible_service_id=payload.requesting_service_id,
                 attending_physician_id=payload.responsible_physician_id,
                 coverage_id=coverage_id,
+                at=now,
+            )
+
+            # Los diagnósticos de ingreso son presuntivos: se asientan con la admisión y
+            # el alta médica después asienta los de egreso.
+            await record_diagnoses(
+                self.session,
+                hospitalization,
+                payload.diagnoses,
+                stage=DiagnosisStage.ADMISSION,
                 at=now,
             )
 

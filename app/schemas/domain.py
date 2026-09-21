@@ -15,6 +15,7 @@ from app.models.bed import BedStatus, TransferStatus
 from app.models.coverage import CoverageStatus
 from app.models.hospitalization import HospitalizationStatus
 from app.models.room import RoomStatus
+from app.schemas.diagnosis import HospitalizationDiagnosisCreate
 
 
 class ORMModel(BaseModel): model_config=ConfigDict(from_attributes=True)
@@ -268,6 +269,9 @@ class AdmissionCreate(BaseModel):
     responsible_physician_id: uuid.UUID | None = None
     requesting_service_id: uuid.UUID | None = None
     presumptive_diagnosis: str | None = Field(default=None, max_length=500)
+    #: Diagnósticos de ingreso codificados en CIE-10. El texto libre de arriba es el
+    #: relato del cuadro; estos son los que van a la estadística.
+    diagnoses: list[HospitalizationDiagnosisCreate] = Field(default_factory=list, max_length=20)
     requested_bed_id: uuid.UUID | None = None
     consents: list[AdmissionConsentCreate] = Field(default_factory=list)
     notes: str | None = None

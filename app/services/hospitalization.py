@@ -26,6 +26,7 @@ from app.models.admission import (
 from app.models.audit import HospitalizationEventType
 from app.models.bed import BedAssignment
 from app.models.care_team import CareTeam, CareTeamMember, CareTeamRole
+from app.models.diagnosis import DiagnosisStage
 from app.models.discharge import (
     ACTIVE_DISCHARGE_PLAN_STATUSES,
     Discharge,
@@ -59,6 +60,7 @@ from app.services.account import (
 )
 from app.services.audit import record_event
 from app.services.bed_assignment import BedAssignmentService
+from app.services.diagnosis import record_diagnoses
 from app.services.service_assignment import active_service_assignment, reassign_service
 
 
@@ -468,6 +470,14 @@ class HospitalizationService:
 
         now = at or datetime.now(UTC)
         effective_at = payload.effective_at or now
+        # Los diagnósticos de egreso son parte del alta: si alguno no cierra, no hay alta.
+        await record_diagnoses(
+            self.session,
+            hospitalization,
+            payload.diagnoses,
+            stage=DiagnosisStage.DISCHARGE,
+            at=now,
+        )
         discharge = Discharge(
             hospitalization_id=hospitalization.id,
             discharge_type=payload.discharge_type,

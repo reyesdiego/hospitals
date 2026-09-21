@@ -9,6 +9,7 @@ from app.api.admission_router import router as admission_router
 from app.api.auth_router import router as auth_router
 from app.api.bed_router import router as bed_router
 from app.api.dependencies import DbSession, enforce_permissions
+from app.api.diagnosis_router import router as diagnosis_router
 from app.api.hospitalization_router import router as hospitalization_router
 from app.api.nursing_router import router as nursing_router
 from app.api.payer_mock_router import router as payer_mock_router
@@ -16,6 +17,7 @@ from app.api.practice_router import router as practice_router
 from app.api.prescription_router import router as prescription_router
 from app.api.presenters import bed_read, room_read
 from app.api.registry_router import router as registry_router
+from app.api.report_router import router as report_router
 from app.core.exceptions import DomainError
 from app.models.admission import (
     Admission,
@@ -683,3 +685,5 @@ api_router.include_router(practice_router, dependencies=protected)
 api_router.include_router(nursing_router, dependencies=protected)
 api_router.include_router(prescription_router, dependencies=protected)
 api_router.include_router(payer_mock_router, dependencies=protected)
+api_router.include_router(diagnosis_router, dependencies=protected)
+api_router.include_router(report_router, dependencies=protected)

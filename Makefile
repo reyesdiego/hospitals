@@ -1,4 +1,4 @@
-.PHONY: db-up db-down install run migrate migration seed-users seed-practices inherit-waiting-periods test lint
+.PHONY: db-up db-down install run migrate migration seed-users seed-practices seed-diagnoses inherit-waiting-periods test lint
 
 db-up:
 	docker compose up -d postgres
@@ -23,6 +23,9 @@ seed-users:
 
 seed-practices:
 	python -m app.db.seeds.practices $(ARGS)
+
+seed-diagnoses:
+	python -m app.db.seeds.diagnoses $(ARGS)
 
 test:
 	pytest

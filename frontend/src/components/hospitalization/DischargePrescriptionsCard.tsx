@@ -1,6 +1,5 @@
 import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { getDefault } from '@/api/endpoints/default/default';
 import { getPractices } from '@/api/endpoints/practices/practices';
 import { getPrescriptions } from '@/api/endpoints/prescriptions/prescriptions';
 import { axiosInstance } from '@/api/custom-instance';
@@ -11,6 +10,7 @@ import type {
   PrescriptionKind,
 } from '@/api/model';
 import Modal from '@/components/Modal';
+import ProfessionalPicker from '@/components/professionals/ProfessionalPicker';
 import {
   ActionButton,
   Card,
@@ -97,7 +97,6 @@ export function DischargePrescriptionsCard({
 }) {
   const api = getPrescriptions();
   const catalog = getPractices();
-  const defaultApi = getDefault();
   const queryClient = useQueryClient();
   const [open, setOpen] = useState(false);
   const [editing, setEditing] = useState<DischargePrescriptionRead | null>(null);
@@ -117,10 +116,6 @@ export function DischargePrescriptionsCard({
     queryKey: ['practices', { only_active: true }],
     queryFn: () => catalog.listPracticesApiV1PracticesGet({ only_active: true }),
     enabled: open,
-  });
-  const professionalsQuery = useQuery({
-    queryKey: ['professionals'],
-    queryFn: () => defaultApi.listProfessionalsApiV1ProfessionalsGet(),
   });
 
   const invalidate = () =>
@@ -218,7 +213,6 @@ export function DischargePrescriptionsCard({
   const items = prescriptionsQuery.data ?? [];
   const medications = items.filter((item) => item.kind === 'MEDICATION');
   const practices = items.filter((item) => item.kind === 'PRACTICE');
-  const professionals = professionalsQuery.data ?? [];
   const editable = canManage && EDITABLE_STATUSES.includes(hosp.status);
   const isSaving = addMutation.isPending || updateMutation.isPending;
 
@@ -419,18 +413,11 @@ export function DischargePrescriptionsCard({
           )}
 
           <Field label="Profesional que firma">
-            <select
+            <ProfessionalPicker
               value={form.prescribed_by_id}
-              onChange={(event) => setForm({ ...form, prescribed_by_id: event.target.value })}
-              className={inputClass}
-            >
-              <option value="">Sin informar</option>
-              {professionals.map((professional) => (
-                <option key={professional.id} value={professional.id}>
-                  {professional.last_name}, {professional.first_name}
-                </option>
-              ))}
-            </select>
+              onSelect={(id) => setForm({ ...form, prescribed_by_id: id })}
+              emptyLabel="Sin informar"
+            />
           </Field>
 
           <Field label="Indicaciones para el paciente">

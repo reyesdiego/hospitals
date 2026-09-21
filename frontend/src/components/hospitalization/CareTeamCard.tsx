@@ -5,6 +5,7 @@ import { getHospitalizationWorkflow } from '@/api/endpoints/hospitalization-work
 import type { CareTeamRole, HospitalizationRead } from '@/api/model';
 import { invalidateHospitalization } from '@/api/queryKeys';
 import Modal from '@/components/Modal';
+import ProfessionalPicker from '@/components/professionals/ProfessionalPicker';
 import {
   ActionButton,
   Card,
@@ -166,19 +167,11 @@ export function CareTeamCard({
           }}
         >
           <Field label="Profesional">
-            <select
-              required
+            <ProfessionalPicker
               value={practitionerId}
-              onChange={(e) => setPractitionerId(e.target.value)}
-              className={inputClass}
-            >
-              <option value="">Selecciona un profesional...</option>
-              {(professionalsQuery.data ?? []).map((professional) => (
-                <option key={professional.id} value={professional.id}>
-                  {professional.last_name}, {professional.first_name}
-                </option>
-              ))}
-            </select>
+              onSelect={setPractitionerId}
+              emptyLabel=""
+            />
           </Field>
           <Field label="Rol">
             <select

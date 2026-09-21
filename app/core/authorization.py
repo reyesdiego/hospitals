@@ -70,6 +70,15 @@ WRITE_PERMISSIONS: dict[tuple[str, str], Permission] = {
         "POST",
         "/hospitalizations/{hospitalization_id}/authorizations",
     ): Permission.HOSPITALIZATION,
+    ("POST", "/hospitalizations/{hospitalization_id}/diagnoses"): Permission.HOSPITALIZATION,
+    (
+        "PUT",
+        "/hospitalizations/{hospitalization_id}/diagnoses/{entry_id}",
+    ): Permission.HOSPITALIZATION,
+    (
+        "DELETE",
+        "/hospitalizations/{hospitalization_id}/diagnoses/{entry_id}",
+    ): Permission.HOSPITALIZATION,
     # ------------------------------------------------------ tareas de enfermería
     ("POST", "/nursing-tasks/{order_id}/perform"): Permission.NURSING_TASKS,
     ("POST", "/nursing-tasks/{order_id}/cancel"): Permission.NURSING_TASKS,
@@ -135,6 +144,9 @@ WRITE_PERMISSIONS: dict[tuple[str, str], Permission] = {
     ("POST", "/practices/{practice_id}/tariffs"): Permission.CATALOG,
     ("PUT", "/practices/{practice_id}/tariffs/{tariff_id}"): Permission.CATALOG,
     ("DELETE", "/practices/{practice_id}/tariffs/{tariff_id}"): Permission.CATALOG,
+    ("POST", "/diagnoses"): Permission.CATALOG,
+    ("PUT", "/diagnoses/{diagnosis_id}"): Permission.CATALOG,
+    ("DELETE", "/diagnoses/{diagnosis_id}"): Permission.CATALOG,
     ("POST", "/payers"): Permission.CATALOG,
     ("PUT", "/payers/{payer_id}"): Permission.CATALOG,
     ("DELETE", "/payers/{payer_id}"): Permission.CATALOG,

@@ -2,8 +2,9 @@
 audit trail and account."""
 
 import uuid
+from urllib.parse import quote
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Response
 
 from app.api.dependencies import CurrentUser, DbSession
 from app.api.presenters import account_read
@@ -31,6 +32,8 @@ from app.schemas.workflow import (
 )
 from app.services.account import AccountService
 from app.services.audit import list_events
+from app.services.discharge_summary import build_summary
+from app.services.discharge_summary_pdf import render as render_summary
 from app.services.hospitalization import HospitalizationService
 
 router = APIRouter(tags=["hospitalization-workflow"])
@@ -182,6 +185,24 @@ async def administrative_discharge(
 async def list_hospitalization_events(hospitalization_id: uuid.UUID, session: DbSession):
     await HospitalizationService(session).get(hospitalization_id)
     return await list_events(session, hospitalization_id)
+
+
+@router.get(
+    "/hospitalizations/{hospitalization_id}/discharge-summary/pdf",
+    response_class=Response,
+    responses={200: {"content": {"application/pdf": {}}, "description": "PDF para imprimir"}},
+)
+async def print_discharge_summary(hospitalization_id: uuid.UUID, session: DbSession):
+    """Resumen de alta: motivo, diagnósticos CIE-10 de ingreso y de egreso, prácticas
+    realizadas, egreso y medicación. Sin alta médica sale marcado como provisorio."""
+
+    summary = await build_summary(session, hospitalization_id)
+    filename = quote(f"resumen-de-alta-{summary.patient_name}.pdf")
+    return Response(
+        content=render_summary(summary),
+        media_type="application/pdf",
+        headers={"Content-Disposition": f"inline; filename*=UTF-8''{filename}"},
+    )
 
 
 @router.get("/hospitalizations/{hospitalization_id}/account", response_model=AccountRead)

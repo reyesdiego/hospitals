@@ -7,11 +7,16 @@ import { getPractices } from '@/api/endpoints/practices/practices';
 import { getRegistry } from '@/api/endpoints/registry/registry';
 import type {
   AdmissionCreate,
+  DiagnosisRole,
+  HospitalizationDiagnosisCreate,
   PatientCoverageCreate,
   PatientCreate,
   PayerAuthorizationRead,
 } from '@/api/model';
 import { Badge, Card, EmptyState, ErrorState, PageHeader, Spinner } from '@/components/ui';
+import DiagnosisPicker from '@/components/diagnoses/DiagnosisPicker';
+import ProfessionalPicker from '@/components/professionals/ProfessionalPicker';
+import { DIAGNOSIS_ROLE_LABELS } from '@/config/diagnosisLabels';
 import { money } from '@/components/practices/labels';
 import { ADMISSION_STATUS_COLORS, ADMISSION_STATUS_LABELS } from '@/config/workflowLabels';
 import { apiErrorMessage } from '@/utils/api-error';
@@ -115,6 +120,11 @@ export default function AdmissionPanelPage() {
   const [payerAnswer, setPayerAnswer] = useState<PayerAuthorizationRead | null>(null);
   /** Lo que contesto la prestadora cuando la practica pasa a hacerse sin cobertura. */
   const [privateFallback, setPrivateFallback] = useState<PayerAuthorizationRead | null>(null);
+  /** Diagnosticos de ingreso codificados: el texto libre es el relato, estos van a la
+   * estadistica. El primero entra como principal. */
+  const [diagnoses, setDiagnoses] = useState<
+    (HospitalizationDiagnosisCreate & { description: string })[]
+  >([]);
 
   const patientsQuery = useQuery({
     queryKey: ['patients'],
@@ -177,6 +187,7 @@ export default function AdmissionPanelPage() {
       setAuthDraft({ practice_id: '', code: '' });
       setPayerAnswer(null);
       setPrivateFallback(null);
+      setDiagnoses([]);
       // The request creates the hospitalization: continue the flow on it.
       if (admission.hospitalization_id) {
         navigate(`/hospitalizations/${admission.hospitalization_id}`);
@@ -385,6 +396,7 @@ export default function AdmissionPanelPage() {
     createAdmissionMutation.mutate({
       ...admissionForm,
       ...coveragePayload(),
+      diagnoses: diagnoses.map(({ code, role }) => ({ code, role })),
       requested_bed_id: admissionForm.requested_bed_id || null,
       requesting_service_id: admissionForm.requesting_service_id || null,
       consents,
@@ -893,30 +905,27 @@ export default function AdmissionPanelPage() {
                 </select>
               </div>
               <div className="mt-4 grid gap-4 md:grid-cols-2">
-                <select
-                  required
-                  value={admissionForm.responsible_physician_id ?? ''}
-                  onChange={(e) => {
-                    const professional = professionals.find((item) => item.id === e.target.value);
-                    setAdmissionForm({
-                      ...admissionForm,
-                      responsible_physician_id: professional?.id ?? null,
-                      // El nombre queda escrito en la admision: es lo que se lee despues
-                      // aunque el legajo del profesional cambie.
-                      responsible_physician: professional
-                        ? `${professional.last_name}, ${professional.first_name}`
-                        : '',
-                    });
-                  }}
-                  className="rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-teal-500"
-                >
-                  <option value="">Medico responsable</option>
-                  {professionals.map((professional) => (
-                    <option key={professional.id} value={professional.id}>
-                      {professional.last_name}, {professional.first_name}
-                    </option>
-                  ))}
-                </select>
+                <div>
+                  <label className="mb-1.5 block text-sm font-medium text-slate-600">
+                    Medico responsable
+                  </label>
+                  <ProfessionalPicker
+                    value={admissionForm.responsible_physician_id ?? ''}
+                    onSelect={(id) => {
+                      const professional = professionals.find((item) => item.id === id);
+                      setAdmissionForm({
+                        ...admissionForm,
+                        responsible_physician_id: professional?.id ?? null,
+                        // El nombre queda escrito en la admision: es lo que se lee despues
+                        // aunque el legajo del profesional cambie.
+                        responsible_physician: professional
+                          ? `${professional.last_name}, ${professional.first_name}`
+                          : '',
+                      });
+                    }}
+                    emptyLabel=""
+                  />
+                </div>
                 <input
                   placeholder="Diagnostico presuntivo"
                   value={admissionForm.presumptive_diagnosis ?? ''}
@@ -925,6 +934,81 @@ export default function AdmissionPanelPage() {
                   }
                   className="rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-teal-500"
                 />
+              </div>
+
+              <div className="mt-4 rounded-lg bg-slate-50 p-4">
+                <p className="mb-2 text-sm font-semibold text-slate-700">
+                  Diagnosticos de ingreso (CIE-10)
+                </p>
+                <p className="mb-3 text-xs text-slate-500">
+                  Son presuntivos: el diagnostico definitivo lo asienta el medico con el alta.
+                  El primero que se agrega queda como principal.
+                </p>
+                <DiagnosisPicker
+                  onSelect={(code) =>
+                    setDiagnoses((current) =>
+                      current.some((item) => item.code === code.code)
+                        ? current
+                        : [
+                            ...current,
+                            {
+                              code: code.code,
+                              description: code.description,
+                              role: current.length === 0 ? 'PRINCIPAL' : 'SECONDARY',
+                            },
+                          ],
+                    )
+                  }
+                />
+                {diagnoses.length > 0 && (
+                  <div className="mt-3 divide-y divide-slate-100 rounded-lg bg-white">
+                    {diagnoses.map((item) => (
+                      <div
+                        key={item.code}
+                        className="flex flex-wrap items-center justify-between gap-3 px-3 py-2"
+                      >
+                        <p className="text-sm text-slate-700">
+                          <span className="rounded-md bg-slate-100 px-2 py-0.5 text-xs font-bold">
+                            {item.code}
+                          </span>{' '}
+                          {item.description}
+                        </p>
+                        <div className="flex items-center gap-2">
+                          <select
+                            value={item.role ?? 'SECONDARY'}
+                            onChange={(e) =>
+                              setDiagnoses((current) =>
+                                current.map((entry) =>
+                                  entry.code === item.code
+                                    ? { ...entry, role: e.target.value as DiagnosisRole }
+                                    : entry,
+                                ),
+                              )
+                            }
+                            className="rounded-lg border border-slate-200 px-2 py-1 text-xs outline-none focus:border-teal-500"
+                          >
+                            {Object.entries(DIAGNOSIS_ROLE_LABELS).map(([value, label]) => (
+                              <option key={value} value={value}>
+                                {label}
+                              </option>
+                            ))}
+                          </select>
+                          <button
+                            type="button"
+                            onClick={() =>
+                              setDiagnoses((current) =>
+                                current.filter((entry) => entry.code !== item.code),
+                              )
+                            }
+                            className="rounded-lg px-2 py-1 text-xs font-semibold text-red-600 hover:bg-red-50"
+                          >
+                            Quitar
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
               <textarea
                 required
@@ -1032,7 +1116,11 @@ export default function AdmissionPanelPage() {
                 </div>
                 <button
                   type="submit"
-                  disabled={createAdmissionMutation.isPending || !admissionForm.patient_id}
+                  disabled={
+                    createAdmissionMutation.isPending ||
+                    !admissionForm.patient_id ||
+                    !admissionForm.responsible_physician_id
+                  }
                   className="inline-flex items-center justify-center gap-2 rounded-lg bg-gradient-to-r from-teal-500 to-cyan-600 px-4 py-2.5 text-sm font-semibold text-white shadow-md disabled:opacity-50"
                 >
                   <CheckCircle2 className="h-4 w-4" />

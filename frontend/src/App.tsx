@@ -11,6 +11,8 @@ import ProfessionalsPage from '@/pages/ProfessionalsPage';
 import BedsPage from '@/pages/BedsPage';
 import RoomsPage from '@/pages/RoomsPage';
 import FacilitiesPage from '@/pages/FacilitiesPage';
+import DiagnosesPage from '@/pages/DiagnosesPage';
+import MorbidityReportPage from '@/pages/MorbidityReportPage';
 import ServicesPage from '@/pages/ServicesPage';
 import MedicalPracticesPage from '@/pages/MedicalPracticesPage';
 import CoveragesPage from '@/pages/CoveragesPage';
@@ -97,6 +99,11 @@ function AppRoutes() {
         <Route path="/facilities" element={screen(['CATALOG'], <FacilitiesPage />)} />
         <Route path="/services" element={screen(['CATALOG'], <ServicesPage />)} />
         <Route path="/practices" element={screen(['CATALOG'], <MedicalPracticesPage />)} />
+        <Route path="/diagnoses" element={screen(['CATALOG'], <DiagnosesPage />)} />
+        <Route
+          path="/reports/morbidity"
+          element={screen(['HOSPITALIZATION', 'ADMISSION'], <MorbidityReportPage />)}
+        />
         <Route path="/coverages" element={screen(['CATALOG'], <CoveragesPage />)} />
         <Route path="/coverages/plans/:planId" element={screen(['CATALOG'], <PlanPracticesPage />)} />
         <Route path="/nursing-tasks" element={screen(['NURSING_TASKS'], <NursingTasksPage />)} />

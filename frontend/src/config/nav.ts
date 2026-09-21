@@ -10,6 +10,8 @@ import {
   Stethoscope,
   ClipboardCheck,
   ClipboardList,
+  BookMarked,
+  TrendingUp,
   ShieldPlus,
   Syringe,
   UserCog,
@@ -92,10 +94,22 @@ export const NAV_ITEMS: NavConfig[] = [
     permissions: ['CATALOG'],
   },
   {
+    label: 'Diagnosticos CIE-10',
+    path: '/diagnoses',
+    icon: BookMarked,
+    permissions: ['CATALOG'],
+  },
+  {
     label: 'Coberturas',
     path: '/coverages',
     icon: ShieldPlus,
     permissions: ['CATALOG'],
+  },
+  {
+    label: 'Informe estadistico',
+    path: '/reports/morbidity',
+    icon: TrendingUp,
+    permissions: ['HOSPITALIZATION', 'ADMISSION'],
   },
   {
     label: 'Usuarios',

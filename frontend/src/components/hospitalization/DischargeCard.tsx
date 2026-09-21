@@ -1,8 +1,8 @@
 import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { getDefault } from '@/api/endpoints/default/default';
 import { getHospitalizationWorkflow } from '@/api/endpoints/hospitalization-workflow/hospitalization-workflow';
 import type {
+  DiagnosisRole,
   DischargeDestination,
   DischargePlanCreate,
   DischargeType,
@@ -10,6 +10,8 @@ import type {
 } from '@/api/model';
 import { invalidateHospitalization } from '@/api/queryKeys';
 import Modal from '@/components/Modal';
+import DiagnosisPicker from '@/components/diagnoses/DiagnosisPicker';
+import ProfessionalPicker from '@/components/professionals/ProfessionalPicker';
 import {
   ActionButton,
   Card,
@@ -24,6 +26,7 @@ import {
   DISCHARGE_PLAN_STATUS_LABELS,
   DISCHARGE_TYPE_LABELS,
 } from '@/config/workflowLabels';
+import { DIAGNOSIS_ROLE_LABELS } from '@/config/diagnosisLabels';
 import { apiErrorMessage } from '@/utils/api-error';
 import { formatDate, formatDateTime } from '@/utils/format';
 import { ClipboardCheck, DoorOpen, FileCheck2, Stethoscope } from 'lucide-react';
@@ -48,7 +51,6 @@ export function DischargeCard({
   canManage: boolean;
 }) {
   const api = getHospitalizationWorkflow();
-  const defaultApi = getDefault();
   const queryClient = useQueryClient();
   const [planOpen, setPlanOpen] = useState(false);
   const [dischargeOpen, setDischargeOpen] = useState(false);
@@ -64,6 +66,10 @@ export function DischargeCard({
   const [departureNotes, setDepartureNotes] = useState('');
   const [administrativeNotes, setAdministrativeNotes] = useState('');
   const [error, setError] = useState<string | null>(null);
+  /** Diagnosticos de egreso: los que el medico firma con el alta. El primero es el principal. */
+  const [dischargeDiagnoses, setDischargeDiagnoses] = useState<
+    { code: string; description: string; role: DiagnosisRole }[]
+  >([]);
 
   const plansQuery = useQuery({
     queryKey: ['discharge-plans', hosp.id],
@@ -74,10 +80,6 @@ export function DischargeCard({
     queryFn: () => api.getDischargeApiV1HospitalizationsHospitalizationIdDischargeGet(hosp.id),
     enabled: Boolean(hosp.clinically_discharged_at),
     retry: false,
-  });
-  const professionalsQuery = useQuery({
-    queryKey: ['professionals'],
-    queryFn: () => defaultApi.listProfessionalsApiV1ProfessionalsGet(),
   });
 
   const done = () => {
@@ -104,10 +106,16 @@ export function DischargeCard({
         destination: dischargeDestination || null,
         ordered_by_practitioner_id: practitionerId || null,
         instructions: instructions || null,
+        diagnoses: dischargeDiagnoses.map(({ code, role }) => ({
+          code,
+          role,
+          stage: 'DISCHARGE' as const,
+        })),
       }),
     onSuccess: () => {
       done();
       setDischargeOpen(false);
+      setDischargeDiagnoses([]);
     },
     onError: (err) => setError(apiErrorMessage(err, 'No se pudo registrar el alta clinica.')),
   });
@@ -370,18 +378,7 @@ export function DischargeCard({
             </select>
           </Field>
           <Field label="Medico que indica el alta">
-            <select
-              value={practitionerId}
-              onChange={(e) => setPractitionerId(e.target.value)}
-              className={inputClass}
-            >
-              <option value="">Sin registrar</option>
-              {(professionalsQuery.data ?? []).map((professional) => (
-                <option key={professional.id} value={professional.id}>
-                  {professional.last_name}, {professional.first_name}
-                </option>
-              ))}
-            </select>
+            <ProfessionalPicker value={practitionerId} onSelect={setPractitionerId} />
           </Field>
           <Field label="Destino">
             <select
@@ -414,6 +411,80 @@ export function DischargeCard({
               className={inputClass}
             />
           </Field>
+          <div className="rounded-lg bg-slate-50 p-3">
+            <p className="mb-2 text-sm font-semibold text-slate-700">
+              Diagnosticos de egreso (CIE-10)
+            </p>
+            <p className="mb-2 text-xs text-slate-500">
+              Los de ingreso quedan como estan: la diferencia entre lo que se sospecho y lo
+              que resulto es parte de la historia.
+            </p>
+            <DiagnosisPicker
+              onSelect={(code) =>
+                setDischargeDiagnoses((current) =>
+                  current.some((item) => item.code === code.code)
+                    ? current
+                    : [
+                        ...current,
+                        {
+                          code: code.code,
+                          description: code.description,
+                          role: current.length === 0 ? 'PRINCIPAL' : 'SECONDARY',
+                        },
+                      ],
+                )
+              }
+            />
+            {dischargeDiagnoses.length > 0 && (
+              <div className="mt-2 divide-y divide-slate-100 rounded-lg bg-white">
+                {dischargeDiagnoses.map((item) => (
+                  <div
+                    key={item.code}
+                    className="flex flex-wrap items-center justify-between gap-2 px-3 py-2"
+                  >
+                    <p className="text-sm text-slate-700">
+                      <span className="rounded-md bg-slate-100 px-2 py-0.5 text-xs font-bold">
+                        {item.code}
+                      </span>{' '}
+                      {item.description}
+                    </p>
+                    <div className="flex items-center gap-2">
+                      <select
+                        value={item.role}
+                        onChange={(e) =>
+                          setDischargeDiagnoses((current) =>
+                            current.map((entry) =>
+                              entry.code === item.code
+                                ? { ...entry, role: e.target.value as DiagnosisRole }
+                                : entry,
+                            ),
+                          )
+                        }
+                        className="rounded-lg border border-slate-200 px-2 py-1 text-xs outline-none focus:border-teal-500"
+                      >
+                        {Object.entries(DIAGNOSIS_ROLE_LABELS).map(([value, label]) => (
+                          <option key={value} value={value}>
+                            {label}
+                          </option>
+                        ))}
+                      </select>
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setDischargeDiagnoses((current) =>
+                            current.filter((entry) => entry.code !== item.code),
+                          )
+                        }
+                        className="rounded-lg px-2 py-1 text-xs font-semibold text-red-600 hover:bg-red-50"
+                      >
+                        Quitar
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
           <FormError message={error} />
           <div className="flex justify-end gap-3 pt-2">
             <ActionButton tone="neutral" onClick={() => setDischargeOpen(false)}>

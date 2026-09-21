@@ -8,6 +8,7 @@ import AdmissionCard from '@/components/hospitalization/AdmissionCard';
 import { isPostDischarge } from '@/components/hospitalization/lock';
 import BedManagementCard from '@/components/hospitalization/BedManagementCard';
 import CareTeamCard from '@/components/hospitalization/CareTeamCard';
+import DiagnosesCard from '@/components/hospitalization/DiagnosesCard';
 import DischargeCard from '@/components/hospitalization/DischargeCard';
 import DischargePrescriptionsCard from '@/components/hospitalization/DischargePrescriptionsCard';
 import EventsCard from '@/components/hospitalization/EventsCard';
@@ -133,6 +134,7 @@ export default function HospitalizationDetailPage() {
           <AdmissionCard hosp={hosp} />
           <BedManagementCard hosp={hosp} canManage={canManage} />
           <PracticesCard hosp={hosp} canManage={canManage} />
+          <DiagnosesCard hosp={hosp} canManage={canManage} />
           <AccountCard hosp={hosp} canManage={canManage} />
           <DischargeCard hosp={hosp} canManage={canManage} />
           <DischargePrescriptionsCard hosp={hosp} canManage={canManage} />

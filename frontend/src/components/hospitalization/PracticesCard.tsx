@@ -6,6 +6,7 @@ import type {
   HospitalizationPracticeCreate,
   HospitalizationPracticeRead,
   HospitalizationRead,
+  MedicalPracticeRead,
   PlanCoverageCheckRead,
 } from '@/api/model';
 import { invalidateHospitalization } from '@/api/queryKeys';
@@ -22,6 +23,8 @@ import {
   inputClass,
 } from '@/components/ui';
 import { money } from '@/components/practices/labels';
+import PracticePicker from '@/components/practices/PracticePicker';
+import ProfessionalPicker from '@/components/professionals/ProfessionalPicker';
 import {
   PRACTICE_ORDER_STATUS_COLORS,
   PRACTICE_ORDER_STATUS_LABELS,
@@ -95,6 +98,8 @@ export function PracticesCard({
   const queryClient = useQueryClient();
   const [open, setOpen] = useState(false);
   const [form, setForm] = useState<PracticeForm>(emptyForm);
+  /** La practica elegida en el buscador: el nomenclador no se trae entero. */
+  const [practice, setPractice] = useState<MedicalPracticeRead | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   const practicesQuery = useQuery({
@@ -102,11 +107,6 @@ export function PracticesCard({
     queryFn: () =>
       api.listHospitalizationPracticesApiV1HospitalizationsHospitalizationIdPracticesGet(hosp.id),
     retry: false,
-  });
-  const catalogQuery = useQuery({
-    queryKey: ['practices', { only_active: true }],
-    queryFn: () => api.listPracticesApiV1PracticesGet({ only_active: true }),
-    enabled: open,
   });
   const professionalsQuery = useQuery({
     queryKey: ['professionals'],
@@ -130,6 +130,7 @@ export function PracticesCard({
   const closeModal = () => {
     setOpen(false);
     setForm(emptyForm);
+    setPractice(null);
     setError(null);
   };
 
@@ -199,9 +200,7 @@ export function PracticesCard({
   const practices = practicesQuery.data ?? [];
   const professionals = professionalsQuery.data ?? [];
   const coverage = form.practice_id ? coverageQuery.data : undefined;
-  const nursingTask = Boolean(
-    (catalogQuery.data ?? []).find((item) => item.id === form.practice_id)?.is_nursing_task,
-  );
+  const nursingTask = Boolean(practice?.is_nursing_task);
   const professionalName = (id: string | null) => {
     if (!id) return null;
     const professional = professionals.find((item) => item.id === id);
@@ -350,30 +349,40 @@ export function PracticesCard({
       <Modal open={open} onClose={closeModal} title="Practica de la internacion" maxWidth="max-w-xl">
         <form onSubmit={handleSubmit} className="space-y-4">
           <Field label="Practica del nomenclador">
-            <select
-              required
-              value={form.practice_id}
-              onChange={(event) => {
-                const practice = (catalogQuery.data ?? []).find(
-                  (item) => item.id === event.target.value,
-                );
-                // Lo que ejecuta enfermeria se indica pendiente: lo aplica su panel.
-                setForm({
-                  ...form,
-                  practice_id: event.target.value,
-                  performed: practice?.is_nursing_task ? false : form.performed,
-                });
-              }}
-              className={inputClass}
-            >
-              <option value="">Seleccione una practica</option>
-              {(catalogQuery.data ?? []).map((practice) => (
-                <option key={practice.id} value={practice.id}>
-                  {practice.code} - {practice.name}
-                  {practice.is_nursing_task ? ' (enfermeria)' : ''}
-                </option>
-              ))}
-            </select>
+            {practice ? (
+              <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-slate-200 px-3 py-2">
+                <p className="text-sm text-slate-700">
+                  <span className="rounded-md bg-slate-100 px-2 py-0.5 text-xs font-bold">
+                    {practice.code}
+                  </span>{' '}
+                  {practice.name}
+                  {practice.is_nursing_task && (
+                    <span className="ml-1 text-xs text-teal-600">(enfermeria)</span>
+                  )}
+                </p>
+                <ActionButton
+                  tone="neutral"
+                  onClick={() => {
+                    setPractice(null);
+                    setForm({ ...form, practice_id: '' });
+                  }}
+                >
+                  Cambiar
+                </ActionButton>
+              </div>
+            ) : (
+              <PracticePicker
+                onSelect={(selected) => {
+                  setPractice(selected);
+                  // Lo que ejecuta enfermeria se indica pendiente: lo aplica su panel.
+                  setForm({
+                    ...form,
+                    practice_id: selected.id,
+                    performed: selected.is_nursing_task ? false : form.performed,
+                  });
+                }}
+              />
+            )}
           </Field>
 
           {coverage && (
@@ -451,19 +460,11 @@ export function PracticesCard({
           )}
 
           <Field label="Recetada por">
-            <select
-              required
+            <ProfessionalPicker
               value={form.prescribed_by_id}
-              onChange={(event) => setForm({ ...form, prescribed_by_id: event.target.value })}
-              className={inputClass}
-            >
-              <option value="">Seleccione un profesional</option>
-              {professionals.map((professional) => (
-                <option key={professional.id} value={professional.id}>
-                  {professional.last_name}, {professional.first_name}
-                </option>
-              ))}
-            </select>
+              onSelect={(id) => setForm({ ...form, prescribed_by_id: id })}
+              emptyLabel=""
+            />
           </Field>
 
           <Field label="Cantidad">
@@ -504,18 +505,10 @@ export function PracticesCard({
                 />
               </Field>
               <Field label="Realizada por">
-                <select
+                <ProfessionalPicker
                   value={form.performed_by_id}
-                  onChange={(event) => setForm({ ...form, performed_by_id: event.target.value })}
-                  className={inputClass}
-                >
-                  <option value="">Sin registrar</option>
-                  {professionals.map((professional) => (
-                    <option key={professional.id} value={professional.id}>
-                      {professional.last_name}, {professional.first_name}
-                    </option>
-                  ))}
-                </select>
+                  onSelect={(id) => setForm({ ...form, performed_by_id: id })}
+                />
               </Field>
             </div>
           )}
@@ -547,7 +540,13 @@ export function PracticesCard({
             <ActionButton tone="neutral" onClick={closeModal}>
               Cancelar
             </ActionButton>
-            <ActionButton type="submit" tone="primary" disabled={registerMutation.isPending}>
+            <ActionButton
+              type="submit"
+              tone="primary"
+              disabled={
+                registerMutation.isPending || !form.practice_id || !form.prescribed_by_id
+              }
+            >
               {registerMutation.isPending ? 'Guardando...' : 'Guardar'}
             </ActionButton>
           </div>

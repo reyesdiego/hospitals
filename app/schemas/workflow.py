@@ -20,6 +20,7 @@ from app.models.bed import BedReservationStatus, BedStatus
 from app.models.care_team import CareTeamRole
 from app.models.discharge import DischargeDestination, DischargePlanStatus, DischargeType
 from app.models.patient import PatientIdentifierType
+from app.schemas.diagnosis import HospitalizationDiagnosisCreate
 from app.schemas.domain import ORMModel, PatientRead
 
 
@@ -258,6 +259,9 @@ class ClinicalDischargeCreate(BaseModel):
     ordered_by_practitioner_id: uuid.UUID | None = None
     effective_at: datetime | None = None
     instructions: str | None = None
+    #: Diagnósticos de egreso: los que el médico firma con el alta. Los de ingreso quedan
+    #: como estaban, que es la diferencia entre lo que se sospechó y lo que resultó.
+    diagnoses: list[HospitalizationDiagnosisCreate] = Field(default_factory=list, max_length=20)
 
 
 class DischargeRead(ORMModel):

@@ -34,6 +34,13 @@ from app.models.bed import (
 )
 from app.models.care_team import CareTeam, CareTeamMember, CareTeamRole
 from app.models.coverage import CoverageStatus, HealthPlan, PatientCoverage, Payer
+from app.models.diagnosis import (
+    DiagnosisCode,
+    DiagnosisLevel,
+    DiagnosisRole,
+    DiagnosisStage,
+    HospitalizationDiagnosis,
+)
 from app.models.discharge import (
     Discharge,
     DischargeDestination,
@@ -93,6 +100,10 @@ __all__ = [
     "ChargeItemStatus",
     "ConsentType",
     "CoverageStatus",
+    "DiagnosisCode",
+    "DiagnosisLevel",
+    "DiagnosisRole",
+    "DiagnosisStage",
     "Discharge",
     "DischargeDestination",
     "DischargePlan",
@@ -105,6 +116,7 @@ __all__ = [
     "HealthPlan",
     "HealthPlanPractice",
     "Hospitalization",
+    "HospitalizationDiagnosis",
     "HospitalizationEvent",
     "HospitalizationEventType",
     "HospitalizationPractice",

@@ -80,6 +80,8 @@ export const EVENT_TYPE_LABELS: Record<HospitalizationEventType, string> = {
   BED_ASSIGNED: 'Ingreso a la cama',
   PATIENT_TRANSFERRED: 'Paciente trasladado',
   BED_RELEASED: 'Cama liberada',
+  DIAGNOSIS_RECORDED: 'Diagnostico asentado',
+  DIAGNOSIS_REMOVED: 'Diagnostico quitado',
   PRACTICE_ORDERED: 'Practica indicada',
   PRACTICE_PERFORMED: 'Practica realizada',
   PRACTICE_CANCELLED: 'Practica anulada',

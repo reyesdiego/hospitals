@@ -8,6 +8,7 @@ import type { AdmissionConsentCreate } from './admissionConsentCreate';
 import type { AdmissionOrigin } from './admissionOrigin';
 import type { AdmissionType } from './admissionType';
 import type { AuthorizationStatus } from './authorizationStatus';
+import type { HospitalizationDiagnosisCreate } from './hospitalizationDiagnosisCreate';
 import type { PatientCoverageCreate } from './patientCoverageCreate';
 
 export interface AdmissionCreate {
@@ -45,6 +46,8 @@ export interface AdmissionCreate {
   responsible_physician_id?: string | null;
   requesting_service_id?: string | null;
   presumptive_diagnosis?: string | null;
+  /** @maxItems 20 */
+  diagnoses?: HospitalizationDiagnosisCreate[];
   requested_bed_id?: string | null;
   consents?: AdmissionConsentCreate[];
   notes?: string | null;

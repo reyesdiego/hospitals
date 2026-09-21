@@ -6,6 +6,7 @@
  */
 import type { DischargeDestination } from './dischargeDestination';
 import type { DischargeType } from './dischargeType';
+import type { HospitalizationDiagnosisCreate } from './hospitalizationDiagnosisCreate';
 
 export interface ClinicalDischargeCreate {
   discharge_type?: DischargeType;
@@ -15,4 +16,6 @@ export interface ClinicalDischargeCreate {
   ordered_by_practitioner_id?: string | null;
   effective_at?: string | null;
   instructions?: string | null;
+  /** @maxItems 20 */
+  diagnoses?: HospitalizationDiagnosisCreate[];
 }
