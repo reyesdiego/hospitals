@@ -2,8 +2,8 @@
 
 Es el documento que cierra la internación y el que lee el médico que recibe al paciente
 después: por qué entró, qué se le encontró —los diagnósticos codificados en CIE-10—, qué
-se le hizo y con qué se va. Se arma con lo que ya está cargado; no se escribe aparte,
-porque un resumen que se escribe dos veces termina diciendo dos cosas distintas.
+se le hizo, qué recibió y con qué se va. Se arma con lo que ya está cargado; no se escribe
+aparte, porque un resumen que se escribe dos veces termina diciendo dos cosas distintas.
 """
 
 import uuid
@@ -11,7 +11,7 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from decimal import Decimal
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.exceptions import DomainError
@@ -28,6 +28,13 @@ from app.models.prescription import DischargePrescription
 from app.models.professional import Professional
 from app.models.room import Room
 from app.models.service import Service
+from app.models.treatment import (
+    AdministrationStatus,
+    ClinicalNoteStatus,
+    HospitalizationNote,
+    HospitalizationTreatment,
+    TreatmentAdministration,
+)
 
 
 @dataclass(frozen=True)
@@ -36,6 +43,15 @@ class PerformedPractice:
     name: str
     performed_at: datetime | None
     quantity: Decimal
+
+
+@dataclass(frozen=True)
+class TreatmentLine:
+    """Una indicación con lo que efectivamente se le dio al paciente."""
+
+    treatment: HospitalizationTreatment
+    given: int
+    omitted: int
 
 
 @dataclass(frozen=True)
@@ -60,6 +76,8 @@ class DischargeSummary:
     admission_diagnoses: list[HospitalizationDiagnosis] = field(default_factory=list)
     discharge_diagnoses: list[HospitalizationDiagnosis] = field(default_factory=list)
     practices: list[PerformedPractice] = field(default_factory=list)
+    treatments: list[TreatmentLine] = field(default_factory=list)
+    notes: list[HospitalizationNote] = field(default_factory=list)
     prescriptions: list[DischargePrescription] = field(default_factory=list)
 
     @property
@@ -162,6 +180,42 @@ async def build_summary(
             )
         ).all()
     ]
+    # Lo que recibió durante la internación, con las tomas que quedaron registradas.
+    treatments = list(
+        (
+            await session.scalars(
+                select(HospitalizationTreatment)
+                .where(HospitalizationTreatment.hospitalization_id == hospitalization_id)
+                .order_by(HospitalizationTreatment.started_at)
+            )
+        ).all()
+    )
+    doses: dict[uuid.UUID, dict[AdministrationStatus, int]] = {}
+    for treatment_id, status, total in (
+        await session.execute(
+            select(
+                TreatmentAdministration.treatment_id,
+                TreatmentAdministration.status,
+                func.count(),
+            )
+            .where(TreatmentAdministration.hospitalization_id == hospitalization_id)
+            .group_by(TreatmentAdministration.treatment_id, TreatmentAdministration.status)
+        )
+    ).all():
+        doses.setdefault(treatment_id, {})[status] = total
+    # Las notas anuladas no van al resumen: se anularon porque no eran de este paciente.
+    notes = list(
+        (
+            await session.scalars(
+                select(HospitalizationNote)
+                .where(
+                    HospitalizationNote.hospitalization_id == hospitalization_id,
+                    HospitalizationNote.status == ClinicalNoteStatus.ACTIVE,
+                )
+                .order_by(HospitalizationNote.noted_at)
+            )
+        ).all()
+    )
     prescriptions = list(
         (
             await session.scalars(
@@ -211,5 +265,14 @@ async def build_summary(
             item for item in diagnoses if item.stage == DiagnosisStage.DISCHARGE
         ],
         practices=practices,
+        treatments=[
+            TreatmentLine(
+                treatment=treatment,
+                given=doses.get(treatment.id, {}).get(AdministrationStatus.GIVEN, 0),
+                omitted=doses.get(treatment.id, {}).get(AdministrationStatus.OMITTED, 0),
+            )
+            for treatment in treatments
+        ],
+        notes=notes,
         prescriptions=prescriptions,
     )

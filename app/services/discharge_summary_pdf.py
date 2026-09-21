@@ -12,7 +12,11 @@ from reportlab.pdfgen import canvas
 
 from app.models.diagnosis import HospitalizationDiagnosis
 from app.models.prescription import PrescriptionKind
-from app.services.discharge_summary import DischargeSummary, PerformedPractice
+from app.services.discharge_summary import (
+    DischargeSummary,
+    PerformedPractice,
+    TreatmentLine,
+)
 from app.services.prescription_pdf import BOTTOM, LEFT, LINE, RIGHT, TOP, _local, _wrap
 
 ROLE_LABELS = {
@@ -28,6 +32,27 @@ DISCHARGE_TYPE_LABELS = {
     "DECEASED": "Fallecimiento",
     "ABSCONDED": "Retiro sin alta",
     "OTHER": "Otra",
+}
+ROUTE_LABELS = {
+    "ORAL": "via oral",
+    "INTRAVENOUS": "endovenosa",
+    "INTRAMUSCULAR": "intramuscular",
+    "SUBCUTANEOUS": "subcutanea",
+    "INHALATORY": "inhalatoria",
+    "TOPICAL": "topica",
+    "RECTAL": "rectal",
+    "OTHER": "otra via",
+}
+NOTE_LABELS = {
+    "EVOLUTION": "Evolucion",
+    "OBSERVATION": "Observacion",
+    "INTERCONSULTATION": "Interconsulta",
+    "NURSING": "Enfermeria",
+}
+TREATMENT_STATUS_LABELS = {
+    "ACTIVE": "en curso al alta",
+    "SUSPENDED": "suspendida",
+    "COMPLETED": "cumplida",
 }
 DESTINATION_LABELS = {
     "HOME": "Domicilio",
@@ -142,6 +167,33 @@ def _diagnosis_line(entry: HospitalizationDiagnosis) -> str:
     return f"{entry.code} - {entry.description} ({role})"
 
 
+def _treatment_line(line: TreatmentLine) -> str:
+    treatment = line.treatment
+    title = treatment.description
+    if treatment.presentation:
+        title = f"{title} - {treatment.presentation}"
+    return title
+
+
+def _treatment_detail(line: TreatmentLine) -> str:
+    """La dosis, el período y lo que efectivamente se le dio."""
+
+    treatment = line.treatment
+    parts = [
+        treatment.dose,
+        ROUTE_LABELS.get(treatment.route.value) if treatment.route else None,
+        treatment.frequency,
+        f"desde {_local(treatment.started_at)}",
+        f"hasta {_local(treatment.ended_at)}" if treatment.ended_at else None,
+        TREATMENT_STATUS_LABELS.get(treatment.status.value),
+    ]
+    doses = f"{line.given} toma(s) registrada(s)"
+    if line.omitted:
+        doses = f"{doses}, {line.omitted} no administrada(s)"
+    parts.append(doses)
+    return " · ".join(part for part in parts if part)
+
+
 def _practice_line(practice: PerformedPractice) -> str:
     title = f"{practice.code} - {practice.name}"
     if practice.quantity and practice.quantity != 1:
@@ -180,6 +232,32 @@ def render(summary: DischargeSummary) -> bytes:
             sheet.bullet(_practice_line(practice), _local(practice.performed_at))
     else:
         sheet.paragraph("Sin practicas registradas durante la internacion.", italic=True)
+
+    sheet.section("Medicacion y tratamientos de la internacion")
+    if summary.treatments:
+        for line in summary.treatments:
+            sheet.bullet(_treatment_line(line), _treatment_detail(line))
+    else:
+        sheet.paragraph(
+            "Sin medicacion ni tratamientos registrados durante la internacion.",
+            italic=True,
+        )
+
+    sheet.section("Evolucion e interconsultas")
+    if summary.notes:
+        for note in summary.notes:
+            heading = " · ".join(
+                part
+                for part in (
+                    NOTE_LABELS.get(note.kind.value, note.kind.value),
+                    _local(note.noted_at),
+                    note.recorded_by_user_name,
+                )
+                if part
+            )
+            sheet.bullet(heading, note.note)
+    else:
+        sheet.paragraph("Sin notas de evolucion registradas.", italic=True)
 
     sheet.section("Egreso")
     egreso = [
