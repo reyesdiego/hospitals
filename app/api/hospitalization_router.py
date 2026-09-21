@@ -22,6 +22,9 @@ from app.schemas.workflow import (
     DischargePlanRead,
     DischargeRead,
     HospitalizationEventRead,
+    PaymentCreate,
+    PaymentRead,
+    PaymentVoidCreate,
     PhysicalDepartureCreate,
     ServiceAssignmentCreate,
     ServiceAssignmentRead,
@@ -221,6 +224,50 @@ async def void_charge_item(
         charge_item_id,
         payload,
     )
+
+
+@router.get(
+    "/hospitalizations/{hospitalization_id}/account/payments",
+    response_model=list[PaymentRead],
+)
+async def list_payments(hospitalization_id: uuid.UUID, session: DbSession):
+    """Cobros hechos al paciente contra la cuenta de la internación."""
+
+    account = await AccountService(session).for_hospitalization(hospitalization_id)
+    return sorted(account.payments, key=lambda payment: payment.paid_at)
+
+
+@router.post(
+    "/hospitalizations/{hospitalization_id}/account/payments",
+    response_model=PaymentRead,
+    status_code=201,
+)
+async def register_payment(
+    hospitalization_id: uuid.UUID,
+    payload: PaymentCreate,
+    session: DbSession,
+    user: CurrentUser,
+):
+    """Registra un cobro al paciente. El alta administrativa no sale hasta que el saldo
+    a su cargo queda en cero."""
+
+    return await AccountService(session, user).register_payment(hospitalization_id, payload)
+
+
+@router.post(
+    "/hospitalizations/{hospitalization_id}/account/payments/{payment_id}/void",
+    response_model=PaymentRead,
+)
+async def void_payment(
+    hospitalization_id: uuid.UUID,
+    payment_id: uuid.UUID,
+    payload: PaymentVoidCreate,
+    session: DbSession,
+    user: CurrentUser,
+):
+    """Anula un pago mal cargado; el importe vuelve a quedar adeudado."""
+
+    return await AccountService(session, user).void_payment(hospitalization_id, payment_id, payload)
 
 
 @router.post("/accounts/{account_id}/close", response_model=AccountRead)

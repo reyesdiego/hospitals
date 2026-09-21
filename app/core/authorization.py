@@ -106,6 +106,11 @@ WRITE_PERMISSIONS: dict[tuple[str, str], Permission] = {
         "POST",
         "/hospitalizations/{hospitalization_id}/account/charge-items/{charge_item_id}/void",
     ): Permission.BILLING,
+    ("POST", "/hospitalizations/{hospitalization_id}/account/payments"): Permission.BILLING,
+    (
+        "POST",
+        "/hospitalizations/{hospitalization_id}/account/payments/{payment_id}/void",
+    ): Permission.BILLING,
     ("POST", "/accounts/{account_id}/close"): Permission.BILLING,
     # ---------------------------------------------------------------- catálogos
     ("POST", "/facilities"): Permission.CATALOG,

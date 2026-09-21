@@ -15,7 +15,7 @@ from app.schemas.practice import (
     HospitalizationPracticeRead,
     NursingTaskRead,
 )
-from app.schemas.workflow import AccountRead, ChargeItemRead
+from app.schemas.workflow import AccountRead, ChargeItemRead, PaymentRead
 from app.services.account import AccountService
 from app.services.nursing import NursingTask
 from app.services.plan_coverage import effective_waiting_period
@@ -60,9 +60,17 @@ def account_read(account: Account) -> AccountRead:
         closed_at=account.closed_at,
         total_amount=AccountService.total(account),
         voided_amount=AccountService.voided_total(account),
+        payer_amount=AccountService.payer_total(account),
+        patient_amount=AccountService.patient_total(account),
+        paid_amount=AccountService.paid_total(account),
+        patient_balance=AccountService.patient_balance(account),
         charge_items=[
             ChargeItemRead.model_validate(item)
             for item in sorted(account.charge_items, key=lambda item: item.charged_at)
+        ],
+        payments=[
+            PaymentRead.model_validate(payment)
+            for payment in sorted(account.payments, key=lambda payment: payment.paid_at)
         ],
     )
 

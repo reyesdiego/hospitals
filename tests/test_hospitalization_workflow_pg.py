@@ -7,7 +7,7 @@ import pytest
 from sqlalchemy import select
 
 from app.core.exceptions import DomainError
-from app.models.account import Account, AccountStatus
+from app.models.account import Account, AccountStatus, PaymentMethod
 from app.models.admission import (
     Admission,
     AdmissionStatus,
@@ -29,6 +29,7 @@ from app.schemas.workflow import (
     ChargeItemCreate,
     ClinicalDischargeCreate,
     DischargePlanCreate,
+    PaymentCreate,
     PhysicalDepartureCreate,
     ServiceAssignmentCreate,
 )
@@ -476,6 +477,13 @@ def test_account_closure_closes_the_hospitalization():
                     quantity=2,
                     unit_price="1500.00",
                 ),
+            )
+        async with factory() as session:
+            # Paciente particular: el día de internación lo paga él, y sin ese cobro no
+            # hay alta administrativa.
+            await AccountService(session).register_payment(
+                hospitalization_id,
+                PaymentCreate(amount="3000.00", method=PaymentMethod.CASH),
             )
         async with factory() as session:
             await HospitalizationService(session).clinical_discharge(

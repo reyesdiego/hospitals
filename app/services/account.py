@@ -5,7 +5,7 @@ import uuid
 from datetime import UTC, datetime
 from decimal import Decimal
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -17,12 +17,20 @@ from app.models.account import (
     ChargeCategory,
     ChargeItem,
     ChargeItemStatus,
+    Payment,
+    PaymentStatus,
+    ResponsibleParty,
 )
 from app.models.admission import Admission
 from app.models.audit import HospitalizationEventType
 from app.models.hospitalization import Hospitalization, HospitalizationStatus
 from app.models.practice import MedicalPractice
-from app.schemas.workflow import ChargeItemCreate, ChargeItemVoidCreate
+from app.schemas.workflow import (
+    ChargeItemCreate,
+    ChargeItemVoidCreate,
+    PaymentCreate,
+    PaymentVoidCreate,
+)
 from app.services.access import require_editable
 from app.services.audit import record_event
 
@@ -60,6 +68,16 @@ async def require_open_account(session: AsyncSession, hospitalization_id: uuid.U
     return account
 
 
+def default_responsible_party(account: Account) -> ResponsibleParty:
+    """Quién paga un cargo cuando nadie lo aclara.
+
+    Con cobertura detrás el cargo se le factura al financiador; sin cobertura el paciente
+    es particular y paga todo de su bolsillo.
+    """
+
+    return ResponsibleParty.PAYER if account.coverage_id else ResponsibleParty.PATIENT
+
+
 def add_charge(
     session: AsyncSession,
     account: Account,
@@ -73,6 +91,7 @@ def add_charge(
     notes: str | None = None,
     practice_id: uuid.UUID | None = None,
     practice_code: str | None = None,
+    responsible_party: ResponsibleParty | None = None,
 ) -> ChargeItem:
     """Add a charge inside the caller's transaction; the caller owns the commit."""
 
@@ -81,6 +100,7 @@ def add_charge(
         practice_id=practice_id,
         practice_code=practice_code,
         category=category,
+        responsible_party=responsible_party or default_responsible_party(account),
         description=description,
         quantity=quantity,
         unit_price=unit_price,
@@ -91,6 +111,32 @@ def add_charge(
     )
     session.add(item)
     return item
+
+
+async def patient_balance_for_account(
+    session: AsyncSession,
+    account_id: uuid.UUID,
+) -> tuple[Decimal, Decimal, Decimal]:
+    """Cargado al paciente, cobrado y saldo, sin traer la cuenta entera.
+
+    Es lo que mira el alta administrativa, que corre dentro de la transacción del alta.
+    """
+
+    charged = await session.scalar(
+        select(func.coalesce(func.sum(ChargeItem.amount), 0)).where(
+            ChargeItem.account_id == account_id,
+            ChargeItem.status == ChargeItemStatus.ACTIVE,
+            ChargeItem.responsible_party == ResponsibleParty.PATIENT,
+        )
+    )
+    paid = await session.scalar(
+        select(func.coalesce(func.sum(Payment.amount), 0)).where(
+            Payment.account_id == account_id,
+            Payment.status == PaymentStatus.CONFIRMED,
+        )
+    )
+    charged, paid = Decimal(charged or 0), Decimal(paid or 0)
+    return charged, paid, max(charged - paid, Decimal(0))
 
 
 def mark_ready_for_review(
@@ -128,7 +174,7 @@ class AccountService:
     async def for_hospitalization(self, hospitalization_id: uuid.UUID) -> Account:
         account = await self.session.scalar(
             select(Account)
-            .options(selectinload(Account.charge_items))
+            .options(selectinload(Account.charge_items), selectinload(Account.payments))
             .where(Account.hospitalization_id == hospitalization_id)
         )
         if not account:
@@ -161,6 +207,7 @@ class AccountService:
                 notes=payload.notes,
                 practice_id=practice.id if practice else None,
                 practice_code=practice.code if practice else None,
+                responsible_party=payload.responsible_party,
             )
             await self.session.flush()
             return item
@@ -203,6 +250,88 @@ class AccountService:
             )
             await self.session.flush()
             return item
+
+    async def register_payment(
+        self,
+        hospitalization_id: uuid.UUID,
+        payload: PaymentCreate,
+    ) -> Payment:
+        """Cobrar al paciente lo que está a su cargo.
+
+        No se le puede cobrar más de lo que debe: si el importe pasa el saldo, el cargo
+        que falta hay que agregarlo a la cuenta primero.
+        """
+
+        async with self.session.begin():
+            account = await require_open_account(self.session, hospitalization_id)
+            _, _, balance = await patient_balance_for_account(self.session, account.id)
+            if payload.amount > balance:
+                raise DomainError(
+                    f"El pago supera el saldo del paciente: adeuda {balance} "
+                    f"{account.currency}",
+                    409,
+                )
+
+            now = datetime.now(UTC)
+            payment = Payment(
+                account_id=account.id,
+                amount=payload.amount,
+                method=payload.method,
+                status=PaymentStatus.CONFIRMED,
+                paid_at=payload.paid_at or now,
+                received_by=payload.received_by or self.user.name,
+                reference=payload.reference,
+                notes=payload.notes,
+            )
+            self.session.add(payment)
+            record_event(
+                self.session,
+                HospitalizationEventType.PAYMENT_REGISTERED,
+                hospitalization_id=hospitalization_id,
+                patient_id=account.patient_id,
+                actor=payment.received_by,
+                occurred_at=now,
+                details={
+                    "amount": str(payload.amount),
+                    "method": payload.method.value,
+                    "reference": payload.reference,
+                },
+            )
+            await self.session.flush()
+            return payment
+
+    async def void_payment(
+        self,
+        hospitalization_id: uuid.UUID,
+        payment_id: uuid.UUID,
+        payload: PaymentVoidCreate,
+    ) -> Payment:
+        """Anula un pago mal cargado; el importe vuelve a quedar adeudado."""
+
+        async with self.session.begin():
+            account = await require_open_account(self.session, hospitalization_id)
+            payment = await self.session.get(Payment, payment_id)
+            if not payment or payment.account_id != account.id:
+                raise DomainError("Pago inexistente", 404)
+            if payment.status == PaymentStatus.VOID:
+                return payment
+
+            now = datetime.now(UTC)
+            payment.status = PaymentStatus.VOID
+            payment.voided_at = now
+            payment.voided_by = payload.actor or self.user.name
+            payment.void_reason = payload.reason
+            record_event(
+                self.session,
+                HospitalizationEventType.PAYMENT_VOIDED,
+                hospitalization_id=hospitalization_id,
+                patient_id=account.patient_id,
+                actor=payment.voided_by,
+                occurred_at=now,
+                details={"amount": str(payment.amount), "reason": payload.reason},
+            )
+            await self.session.flush()
+            return payment
 
     async def close(self, account_id: uuid.UUID, *, actor: str | None = None) -> Account:
         """Financial closure: closes the account and only then the hospitalization."""
@@ -249,6 +378,46 @@ class AccountService:
                 for item in account.charge_items
                 if item.status == ChargeItemStatus.ACTIVE
             ),
+            Decimal(0),
+        )
+
+    @staticmethod
+    def patient_total(account: Account) -> Decimal:
+        """Lo que se le cobra al paciente: copagos y todo lo que no cubre el financiador."""
+
+        return sum(
+            (
+                item.amount
+                for item in account.charge_items
+                if item.status == ChargeItemStatus.ACTIVE
+                and item.responsible_party == ResponsibleParty.PATIENT
+            ),
+            Decimal(0),
+        )
+
+    @staticmethod
+    def payer_total(account: Account) -> Decimal:
+        return AccountService.total(account) - AccountService.patient_total(account)
+
+    @staticmethod
+    def paid_total(account: Account) -> Decimal:
+        """Lo cobrado: un pago anulado no cancela nada."""
+
+        return sum(
+            (
+                payment.amount
+                for payment in account.payments
+                if payment.status == PaymentStatus.CONFIRMED
+            ),
+            Decimal(0),
+        )
+
+    @staticmethod
+    def patient_balance(account: Account) -> Decimal:
+        """Lo que el paciente todavía debe. Negativo no: un pago de más queda a favor."""
+
+        return max(
+            AccountService.patient_total(account) - AccountService.paid_total(account),
             Decimal(0),
         )
 

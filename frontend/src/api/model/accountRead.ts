@@ -6,6 +6,7 @@
  */
 import type { AccountStatus } from './accountStatus';
 import type { ChargeItemRead } from './chargeItemRead';
+import type { PaymentRead } from './paymentRead';
 
 export interface AccountRead {
   id: string;
@@ -21,5 +22,14 @@ export interface AccountRead {
   total_amount?: string;
   /** @pattern ^(?!^[-+.]*$)[+-]?0*\d*\.?\d*$ */
   voided_amount?: string;
+  /** @pattern ^(?!^[-+.]*$)[+-]?0*\d*\.?\d*$ */
+  payer_amount?: string;
+  /** @pattern ^(?!^[-+.]*$)[+-]?0*\d*\.?\d*$ */
+  patient_amount?: string;
+  /** @pattern ^(?!^[-+.]*$)[+-]?0*\d*\.?\d*$ */
+  paid_amount?: string;
+  /** @pattern ^(?!^[-+.]*$)[+-]?0*\d*\.?\d*$ */
+  patient_balance?: string;
   charge_items?: ChargeItemRead[];
+  payments?: PaymentRead[];
 }

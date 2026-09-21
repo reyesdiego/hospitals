@@ -4,6 +4,10 @@ from app.models.account import (
     ChargeCategory,
     ChargeItem,
     ChargeItemStatus,
+    Payment,
+    PaymentMethod,
+    PaymentStatus,
+    ResponsibleParty,
 )
 from app.models.admission import (
     Admission,
@@ -115,6 +119,9 @@ __all__ = [
     "PatientIdentifier",
     "PatientIdentifierType",
     "Payer",
+    "Payment",
+    "PaymentMethod",
+    "PaymentStatus",
     "PlanCoverageStatus",
     "PracticeChapter",
     "PracticeOrderStatus",
@@ -123,6 +130,7 @@ __all__ = [
     "PrescriptionKind",
     "Professional",
     "ProfessionalSpecialty",
+    "ResponsibleParty",
     "Room",
     "RoomStatus",
     "Service",

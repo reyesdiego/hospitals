@@ -15,7 +15,9 @@ import type {
   ChargeCategory,
   ChargeItemStatus,
   HospitalizationEventType,
+  PaymentMethod,
   PracticeOrderStatus,
+  ResponsibleParty,
 } from '@/api/model';
 
 export const RESERVATION_STATUS_LABELS: Record<BedReservationStatus, string> = {
@@ -89,6 +91,8 @@ export const EVENT_TYPE_LABELS: Record<HospitalizationEventType, string> = {
   BED_STATUS_CHANGED: 'Cambio de estado de la cama',
   ADMINISTRATIVE_DISCHARGE_COMPLETED: 'Alta administrativa',
   CHARGE_ITEM_VOIDED: 'Cargo anulado',
+  PAYMENT_REGISTERED: 'Pago registrado',
+  PAYMENT_VOIDED: 'Pago anulado',
   ACCOUNT_READY_FOR_REVIEW: 'Cuenta lista para auditoria',
   HOSPITALIZATION_CLOSED: 'Internacion cerrada',
   HOSPITALIZATION_CANCELLED: 'Internacion cancelada',
@@ -208,6 +212,20 @@ export const CHARGE_CATEGORY_LABELS: Record<ChargeCategory, string> = {
   SUPPLY: 'Insumos',
   PROFESSIONAL_FEE: 'Honorarios',
   OTHER: 'Otros',
+};
+
+export const RESPONSIBLE_PARTY_LABELS: Record<ResponsibleParty, string> = {
+  PAYER: 'Cobertura',
+  PATIENT: 'Paciente',
+};
+
+export const PAYMENT_METHOD_LABELS: Record<PaymentMethod, string> = {
+  CASH: 'Efectivo',
+  DEBIT_CARD: 'Tarjeta de debito',
+  CREDIT_CARD: 'Tarjeta de credito',
+  BANK_TRANSFER: 'Transferencia',
+  CHECK: 'Cheque',
+  OTHER: 'Otro',
 };
 
 export const CHARGE_ITEM_STATUS_LABELS: Record<ChargeItemStatus, string> = {

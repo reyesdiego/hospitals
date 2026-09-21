@@ -6,6 +6,7 @@
  */
 import type { ChargeCategory } from './chargeCategory';
 import type { ChargeItemStatus } from './chargeItemStatus';
+import type { ResponsibleParty } from './responsibleParty';
 
 export interface ChargeItemRead {
   id: string;
@@ -13,6 +14,7 @@ export interface ChargeItemRead {
   practice_id?: string | null;
   practice_code?: string | null;
   category: ChargeCategory;
+  responsible_party: ResponsibleParty;
   description: string;
   /** @pattern ^(?!^[-+.]*$)[+-]?0*\d*\.?\d*$ */
   quantity: string;

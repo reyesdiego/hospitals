@@ -20,6 +20,9 @@ import type {
   DischargeRead,
   HospitalizationEventRead,
   HospitalizationRead,
+  PaymentCreate,
+  PaymentRead,
+  PaymentVoidCreate,
   PhysicalDepartureCreate,
   ServiceAssignmentCreate,
   ServiceAssignmentRead
@@ -243,6 +246,50 @@ const voidChargeItemApiV1HospitalizationsHospitalizationIdAccountChargeItemsChar
       options);
     }
   /**
+ * Cobros hechos al paciente contra la cuenta de la internación.
+ * @summary List Payments
+ */
+const listPaymentsApiV1HospitalizationsHospitalizationIdAccountPaymentsGet = (
+    hospitalizationId: string,
+ options?: SecondParameter<typeof customInstance<PaymentRead[]>>,) => {
+      return customInstance<PaymentRead[]>(
+      {url: `/api/v1/hospitalizations/${hospitalizationId}/account/payments`, method: 'GET'
+    },
+      options);
+    }
+  /**
+ * Registra un cobro al paciente. El alta administrativa no sale hasta que el saldo
+ * a su cargo queda en cero.
+ * @summary Register Payment
+ */
+const registerPaymentApiV1HospitalizationsHospitalizationIdAccountPaymentsPost = (
+    hospitalizationId: string,
+    paymentCreate: PaymentCreate,
+ options?: SecondParameter<typeof customInstance<PaymentRead>>,) => {
+      return customInstance<PaymentRead>(
+      {url: `/api/v1/hospitalizations/${hospitalizationId}/account/payments`, method: 'POST',
+      headers: {'Content-Type': 'application/json', },
+      data: paymentCreate
+    },
+      options);
+    }
+  /**
+ * Anula un pago mal cargado; el importe vuelve a quedar adeudado.
+ * @summary Void Payment
+ */
+const voidPaymentApiV1HospitalizationsHospitalizationIdAccountPaymentsPaymentIdVoidPost = (
+    hospitalizationId: string,
+    paymentId: string,
+    paymentVoidCreate: PaymentVoidCreate,
+ options?: SecondParameter<typeof customInstance<PaymentRead>>,) => {
+      return customInstance<PaymentRead>(
+      {url: `/api/v1/hospitalizations/${hospitalizationId}/account/payments/${paymentId}/void`, method: 'POST',
+      headers: {'Content-Type': 'application/json', },
+      data: paymentVoidCreate
+    },
+      options);
+    }
+  /**
  * Financial closure: closes the account and the hospitalization.
  * @summary Close Account
  */
@@ -257,7 +304,7 @@ const closeAccountApiV1AccountsAccountIdClosePost = (
     },
       options);
     }
-  return {getHospitalizationApiV1HospitalizationsHospitalizationIdGet,listServiceAssignmentsApiV1HospitalizationsHospitalizationIdServiceAssignmentsGet,assignServiceApiV1HospitalizationsHospitalizationIdServiceAssignmentsPost,getCareTeamApiV1HospitalizationsHospitalizationIdCareTeamGet,addCareTeamMemberApiV1HospitalizationsHospitalizationIdCareTeamMembersPost,endCareTeamMemberApiV1HospitalizationsHospitalizationIdCareTeamMembersMemberIdEndPost,listDischargePlansApiV1HospitalizationsHospitalizationIdDischargePlansGet,planDischargeApiV1HospitalizationsHospitalizationIdDischargePlansPost,getDischargeApiV1HospitalizationsHospitalizationIdDischargeGet,clinicalDischargeApiV1HospitalizationsHospitalizationIdClinicalDischargePost,physicalDepartureApiV1HospitalizationsHospitalizationIdPhysicalDeparturePost,administrativeDischargeApiV1HospitalizationsHospitalizationIdAdministrativeDischargePost,listHospitalizationEventsApiV1HospitalizationsHospitalizationIdEventsGet,getAccountApiV1HospitalizationsHospitalizationIdAccountGet,addChargeItemApiV1HospitalizationsHospitalizationIdAccountChargeItemsPost,voidChargeItemApiV1HospitalizationsHospitalizationIdAccountChargeItemsChargeItemIdVoidPost,closeAccountApiV1AccountsAccountIdClosePost}};
+  return {getHospitalizationApiV1HospitalizationsHospitalizationIdGet,listServiceAssignmentsApiV1HospitalizationsHospitalizationIdServiceAssignmentsGet,assignServiceApiV1HospitalizationsHospitalizationIdServiceAssignmentsPost,getCareTeamApiV1HospitalizationsHospitalizationIdCareTeamGet,addCareTeamMemberApiV1HospitalizationsHospitalizationIdCareTeamMembersPost,endCareTeamMemberApiV1HospitalizationsHospitalizationIdCareTeamMembersMemberIdEndPost,listDischargePlansApiV1HospitalizationsHospitalizationIdDischargePlansGet,planDischargeApiV1HospitalizationsHospitalizationIdDischargePlansPost,getDischargeApiV1HospitalizationsHospitalizationIdDischargeGet,clinicalDischargeApiV1HospitalizationsHospitalizationIdClinicalDischargePost,physicalDepartureApiV1HospitalizationsHospitalizationIdPhysicalDeparturePost,administrativeDischargeApiV1HospitalizationsHospitalizationIdAdministrativeDischargePost,listHospitalizationEventsApiV1HospitalizationsHospitalizationIdEventsGet,getAccountApiV1HospitalizationsHospitalizationIdAccountGet,addChargeItemApiV1HospitalizationsHospitalizationIdAccountChargeItemsPost,voidChargeItemApiV1HospitalizationsHospitalizationIdAccountChargeItemsChargeItemIdVoidPost,listPaymentsApiV1HospitalizationsHospitalizationIdAccountPaymentsGet,registerPaymentApiV1HospitalizationsHospitalizationIdAccountPaymentsPost,voidPaymentApiV1HospitalizationsHospitalizationIdAccountPaymentsPaymentIdVoidPost,closeAccountApiV1AccountsAccountIdClosePost}};
 export type GetHospitalizationApiV1HospitalizationsHospitalizationIdGetResult = NonNullable<Awaited<ReturnType<ReturnType<typeof getHospitalizationWorkflow>['getHospitalizationApiV1HospitalizationsHospitalizationIdGet']>>>
 export type ListServiceAssignmentsApiV1HospitalizationsHospitalizationIdServiceAssignmentsGetResult = NonNullable<Awaited<ReturnType<ReturnType<typeof getHospitalizationWorkflow>['listServiceAssignmentsApiV1HospitalizationsHospitalizationIdServiceAssignmentsGet']>>>
 export type AssignServiceApiV1HospitalizationsHospitalizationIdServiceAssignmentsPostResult = NonNullable<Awaited<ReturnType<ReturnType<typeof getHospitalizationWorkflow>['assignServiceApiV1HospitalizationsHospitalizationIdServiceAssignmentsPost']>>>
@@ -274,4 +321,7 @@ export type ListHospitalizationEventsApiV1HospitalizationsHospitalizationIdEvent
 export type GetAccountApiV1HospitalizationsHospitalizationIdAccountGetResult = NonNullable<Awaited<ReturnType<ReturnType<typeof getHospitalizationWorkflow>['getAccountApiV1HospitalizationsHospitalizationIdAccountGet']>>>
 export type AddChargeItemApiV1HospitalizationsHospitalizationIdAccountChargeItemsPostResult = NonNullable<Awaited<ReturnType<ReturnType<typeof getHospitalizationWorkflow>['addChargeItemApiV1HospitalizationsHospitalizationIdAccountChargeItemsPost']>>>
 export type VoidChargeItemApiV1HospitalizationsHospitalizationIdAccountChargeItemsChargeItemIdVoidPostResult = NonNullable<Awaited<ReturnType<ReturnType<typeof getHospitalizationWorkflow>['voidChargeItemApiV1HospitalizationsHospitalizationIdAccountChargeItemsChargeItemIdVoidPost']>>>
+export type ListPaymentsApiV1HospitalizationsHospitalizationIdAccountPaymentsGetResult = NonNullable<Awaited<ReturnType<ReturnType<typeof getHospitalizationWorkflow>['listPaymentsApiV1HospitalizationsHospitalizationIdAccountPaymentsGet']>>>
+export type RegisterPaymentApiV1HospitalizationsHospitalizationIdAccountPaymentsPostResult = NonNullable<Awaited<ReturnType<ReturnType<typeof getHospitalizationWorkflow>['registerPaymentApiV1HospitalizationsHospitalizationIdAccountPaymentsPost']>>>
+export type VoidPaymentApiV1HospitalizationsHospitalizationIdAccountPaymentsPaymentIdVoidPostResult = NonNullable<Awaited<ReturnType<ReturnType<typeof getHospitalizationWorkflow>['voidPaymentApiV1HospitalizationsHospitalizationIdAccountPaymentsPaymentIdVoidPost']>>>
 export type CloseAccountApiV1AccountsAccountIdClosePostResult = NonNullable<Awaited<ReturnType<ReturnType<typeof getHospitalizationWorkflow>['closeAccountApiV1AccountsAccountIdClosePost']>>>

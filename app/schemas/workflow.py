@@ -6,7 +6,14 @@ from decimal import Decimal
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from app.models.account import AccountStatus, ChargeCategory, ChargeItemStatus
+from app.models.account import (
+    AccountStatus,
+    ChargeCategory,
+    ChargeItemStatus,
+    PaymentMethod,
+    PaymentStatus,
+    ResponsibleParty,
+)
 from app.models.audit import HospitalizationEventType
 from app.models.authorization import AuthorizationState, AuthorizationType
 from app.models.bed import BedReservationStatus, BedStatus
@@ -275,6 +282,9 @@ class PhysicalDepartureCreate(BaseModel):
 class ChargeItemCreate(BaseModel):
     practice_id: uuid.UUID | None = None
     category: ChargeCategory
+    #: Vacío deja que lo resuelva la cuenta: con cobertura factura el financiador, sin
+    #: cobertura paga el paciente.
+    responsible_party: ResponsibleParty | None = None
     description: str = Field(min_length=1, max_length=250)
     quantity: Decimal = Field(default=Decimal(1), gt=0)
     unit_price: Decimal = Field(ge=0)
@@ -296,6 +306,7 @@ class ChargeItemRead(ORMModel):
     practice_id: uuid.UUID | None = None
     practice_code: str | None = None
     category: ChargeCategory
+    responsible_party: ResponsibleParty
     description: str
     quantity: Decimal
     unit_price: Decimal
@@ -304,6 +315,39 @@ class ChargeItemRead(ORMModel):
     recorded_by: str | None
     notes: str | None
     status: ChargeItemStatus = ChargeItemStatus.ACTIVE
+    voided_at: datetime | None = None
+    voided_by: str | None = None
+    void_reason: str | None = None
+
+
+class PaymentCreate(BaseModel):
+    """Un cobro al paciente contra la cuenta de la internación."""
+
+    amount: Decimal = Field(gt=0, max_digits=14, decimal_places=2)
+    method: PaymentMethod = PaymentMethod.CASH
+    paid_at: datetime | None = None
+    received_by: str | None = Field(default=None, max_length=150)
+    reference: str | None = Field(default=None, max_length=100)
+    notes: str | None = None
+
+
+class PaymentVoidCreate(BaseModel):
+    """Un pago mal cargado se anula, no se borra."""
+
+    reason: str | None = Field(default=None, max_length=500)
+    actor: str | None = Field(default=None, max_length=150)
+
+
+class PaymentRead(ORMModel):
+    id: uuid.UUID
+    account_id: uuid.UUID
+    amount: Decimal
+    method: PaymentMethod
+    status: PaymentStatus
+    paid_at: datetime
+    received_by: str | None
+    reference: str | None
+    notes: str | None
     voided_at: datetime | None = None
     voided_by: str | None = None
     void_reason: str | None = None
@@ -322,7 +366,14 @@ class AccountRead(ORMModel):
     # ``total_amount`` only adds the active charges; the voided ones stay in the list.
     total_amount: Decimal = Decimal(0)
     voided_amount: Decimal = Decimal(0)
+    # Cómo se reparte el total y qué queda por cobrarle al paciente, que es lo que traba
+    # el alta administrativa.
+    payer_amount: Decimal = Decimal(0)
+    patient_amount: Decimal = Decimal(0)
+    paid_amount: Decimal = Decimal(0)
+    patient_balance: Decimal = Decimal(0)
     charge_items: list[ChargeItemRead] = Field(default_factory=list)
+    payments: list[PaymentRead] = Field(default_factory=list)
 
 
 class AccountCloseCreate(BaseModel):

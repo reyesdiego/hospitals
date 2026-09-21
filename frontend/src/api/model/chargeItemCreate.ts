@@ -5,10 +5,12 @@
  * OpenAPI spec version: 0.1.0
  */
 import type { ChargeCategory } from './chargeCategory';
+import type { ResponsibleParty } from './responsibleParty';
 
 export interface ChargeItemCreate {
   practice_id?: string | null;
   category: ChargeCategory;
+  responsible_party?: ResponsibleParty | null;
   /**
      * @minLength 1
      * @maxLength 250

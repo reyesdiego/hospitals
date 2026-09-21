@@ -51,7 +51,12 @@ from app.schemas.workflow import (
     PhysicalDepartureCreate,
     ServiceAssignmentCreate,
 )
-from app.services.account import Account, mark_ready_for_review, open_account
+from app.services.account import (
+    Account,
+    mark_ready_for_review,
+    open_account,
+    patient_balance_for_account,
+)
 from app.services.audit import record_event
 from app.services.bed_assignment import BedAssignmentService
 from app.services.service_assignment import active_service_assignment, reassign_service
@@ -581,6 +586,14 @@ class HospitalizationService:
                 409,
             )
 
+        account = await self.session.scalar(
+            select(Account)
+            .where(Account.hospitalization_id == hospitalization.id)
+            .with_for_update()
+        )
+        if account:
+            await self._require_patient_account_settled(account)
+
         now = datetime.now(UTC)
         hospitalization.status = HospitalizationStatus.ADMINISTRATIVELY_DISCHARGED
         hospitalization.administratively_discharged_at = now
@@ -623,11 +636,6 @@ class HospitalizationService:
             if payload.notes:
                 admission.notes = payload.notes
 
-        account = await self.session.scalar(
-            select(Account)
-            .where(Account.hospitalization_id == hospitalization.id)
-            .with_for_update()
-        )
         if account:
             # Billing continues on its own: the account is handed over, not closed.
             mark_ready_for_review(self.session, account, at=now, actor=payload.actor)
@@ -693,6 +701,20 @@ class HospitalizationService:
                 PhysicalDepartureCreate(released_by=payload.actor),
             )
         await self._administrative_discharge(hospitalization, payload)
+
+    async def _require_patient_account_settled(self, account: Account) -> None:
+        """Sin el alta administrativa el paciente sigue siendo del hospital; una vez dada,
+        cobrarle lo que puso de su bolsillo es correrlo por la calle. Lo del financiador no
+        entra acá: eso se factura por convenio y se cobra después."""
+
+        charged, paid, balance = await patient_balance_for_account(self.session, account.id)
+        if balance <= 0:
+            return
+        raise DomainError(
+            f"El alta administrativa requiere que el paciente cancele su saldo: adeuda "
+            f"{balance} {account.currency} de {charged} a su cargo (pagado {paid})",
+            409,
+        )
 
     # ------------------------------------------------------------------ helpers
     async def _for_update(self, hospitalization_id: uuid.UUID) -> Hospitalization:

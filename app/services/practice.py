@@ -10,7 +10,12 @@ from sqlalchemy.orm import selectinload
 
 from app.core.exceptions import DomainError, integrity_conflict
 from app.core.users import STAFF, RequestUser
-from app.models.account import ChargeCategory, ChargeItem, ChargeItemStatus
+from app.models.account import (
+    ChargeCategory,
+    ChargeItem,
+    ChargeItemStatus,
+    ResponsibleParty,
+)
 from app.models.audit import HospitalizationEventType
 from app.models.coverage import HealthPlan, PatientCoverage, Payer
 from app.models.hospitalization import Hospitalization, HospitalizationStatus
@@ -572,6 +577,8 @@ class HospitalizationPracticeService:
                 self.session,
                 account,
                 category=ChargeCategory.OTHER,
+                # El copago lo paga el afiliado en el mostrador, no el financiador.
+                responsible_party=ResponsibleParty.PATIENT,
                 description=f"Copago {practice.code} - {practice.name}",
                 quantity=Decimal(1),
                 unit_price=copayment,
