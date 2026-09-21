@@ -2,18 +2,30 @@ import { useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { getDefault } from '@/api/endpoints/default/default';
+import { getPayerMock } from '@/api/endpoints/payer-mock/payer-mock';
+import { getPractices } from '@/api/endpoints/practices/practices';
 import { getRegistry } from '@/api/endpoints/registry/registry';
-import type { AdmissionCreate, PatientCoverageCreate, PatientCreate } from '@/api/model';
+import type {
+  AdmissionCreate,
+  PatientCoverageCreate,
+  PatientCreate,
+  PayerAuthorizationRead,
+} from '@/api/model';
 import { Badge, Card, EmptyState, ErrorState, PageHeader, Spinner } from '@/components/ui';
+import { money } from '@/components/practices/labels';
 import { ADMISSION_STATUS_COLORS, ADMISSION_STATUS_LABELS } from '@/config/workflowLabels';
+import { apiErrorMessage } from '@/utils/api-error';
+import { formatDate } from '@/utils/format';
 import {
   BedDouble,
   CheckCircle2,
   ClipboardCheck,
   FileSignature,
+  KeyRound,
   Search,
   ShieldCheck,
   UserPlus,
+  Wallet,
 } from 'lucide-react';
 
 const ORIGIN_LABELS = {
@@ -84,6 +96,8 @@ const initialAdmission: AdmissionCreate = {
 export default function AdmissionPanelPage() {
   const api = getDefault();
   const registry = getRegistry();
+  const catalog = getPractices();
+  const payerMock = getPayerMock();
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const [search, setSearch] = useState('');
@@ -96,6 +110,11 @@ export default function AdmissionPanelPage() {
   });
   const [coverageChoice, setCoverageChoice] = useState<CoverageChoice>('NONE');
   const [coverageDraft, setCoverageDraft] = useState<CoverageDraft>(emptyCoverageDraft);
+  /** Codigo de autorizacion que la cobertura le dio al afiliado, y para que practica. */
+  const [authDraft, setAuthDraft] = useState({ practice_id: '', code: '' });
+  const [payerAnswer, setPayerAnswer] = useState<PayerAuthorizationRead | null>(null);
+  /** Lo que contesto la prestadora cuando la practica pasa a hacerse sin cobertura. */
+  const [privateFallback, setPrivateFallback] = useState<PayerAuthorizationRead | null>(null);
 
   const patientsQuery = useQuery({
     queryKey: ['patients'],
@@ -155,6 +174,9 @@ export default function AdmissionPanelPage() {
       setSignedConsents({ GENERAL_ADMISSION: false, DATA_PROCESSING: false, PROCEDURE: false });
       setCoverageChoice('NONE');
       setCoverageDraft(emptyCoverageDraft);
+      setAuthDraft({ practice_id: '', code: '' });
+      setPayerAnswer(null);
+      setPrivateFallback(null);
       // The request creates the hospitalization: continue the flow on it.
       if (admission.hospitalization_id) {
         navigate(`/hospitalizations/${admission.hospitalization_id}`);
@@ -197,6 +219,79 @@ export default function AdmissionPanelPage() {
   const patientCoverages = patientCoveragesQuery.data ?? [];
   const chosenCoverage = patientCoverages.find((coverage) => coverage.id === coverageChoice);
 
+  /** El plan cuya cartilla y cuya prestadora mandan: el de la cobertura elegida, o el de la
+   * cobertura nueva que se esta cargando. */
+  const selectedPlanId =
+    coverageChoice === 'NEW' ? coverageDraft.health_plan_id : (chosenCoverage?.health_plan_id ?? '');
+  const memberNumber =
+    coverageChoice === 'NEW' ? coverageDraft.member_number : (chosenCoverage?.member_number ?? '');
+
+  const cartillaQuery = useQuery({
+    queryKey: ['plan-practices', selectedPlanId],
+    queryFn: () =>
+      registry.listHealthPlanPracticesApiV1HealthPlansHealthPlanIdPracticesGet(selectedPlanId),
+    enabled: selectedPlanId !== '',
+  });
+  const cartilla = cartillaQuery.data ?? [];
+  // Un plan sin cartilla cargada no restringe nada: para autorizar se ofrece el catalogo.
+  const practiceCatalogQuery = useQuery({
+    queryKey: ['practices', 'active'],
+    queryFn: () => catalog.listPracticesApiV1PracticesGet({ only_active: true }),
+    enabled: selectedPlanId !== '' && cartillaQuery.isSuccess && cartilla.length === 0,
+  });
+  const authorizablePractices = cartilla.length
+    ? cartilla.map((entry) => ({
+        id: entry.practice_id,
+        code: entry.practice_code,
+        name: entry.practice_name,
+      }))
+    : (practiceCatalogQuery.data ?? []).map((practice) => ({
+        id: practice.id,
+        code: practice.code,
+        name: practice.name,
+      }));
+
+  const verifyAuthorizationMutation = useMutation({
+    mutationFn: () =>
+      payerMock.verifyPayerAuthorizationApiV1PayerMockAuthorizationsPost({
+        health_plan_id: selectedPlanId,
+        authorization_code: authDraft.code,
+        practice_id: authDraft.practice_id || null,
+        member_number: memberNumber || null,
+      }),
+    onSuccess: (answer) => {
+      setPayerAnswer(answer);
+      setPrivateFallback(null);
+      // Lo que contesta la prestadora es la autorizacion con la que queda la admision.
+      setAdmissionForm((current) => ({
+        ...current,
+        authorization_status: answer.authorized ? 'AUTHORIZED' : 'REJECTED',
+        authorization_number: answer.authorization_number ?? '',
+      }));
+    },
+  });
+
+  /** Cambiar de cobertura o de plan invalida lo que ya haya contestado la prestadora. */
+  const resetAuthorization = () => {
+    setAuthDraft({ practice_id: '', code: '' });
+    setPayerAnswer(null);
+    setPrivateFallback(null);
+    verifyAuthorizationMutation.reset();
+  };
+
+  /** Sin autorizacion la practica se hace sin cobertura: la paga el paciente. */
+  const takePrivate = () => {
+    if (!payerAnswer) return;
+    setPrivateFallback(payerAnswer);
+    setPayerAnswer(null);
+    setCoverageChoice('NONE');
+    setAdmissionForm((current) => ({
+      ...current,
+      authorization_status: 'NOT_REQUIRED',
+      authorization_number: '',
+    }));
+  };
+
   /** Selecting a patient starts the coverage step over: the ones listed belong to them. */
   const selectPatient = (patientId: string) => {
     setAdmissionForm((current) => ({
@@ -207,12 +302,14 @@ export default function AdmissionPanelPage() {
     }));
     setCoverageChoice('NONE');
     setCoverageDraft(emptyCoverageDraft);
+    resetAuthorization();
   };
 
   /** A coverage that needs authorization leaves the admission pending, unless the clerk
    * already resolved it. */
   const chooseCoverage = (choice: CoverageChoice, needsAuthorization: boolean) => {
     setCoverageChoice(choice);
+    resetAuthorization();
     if (needsAuthorization && admissionForm.authorization_status === 'NOT_REQUIRED') {
       setAdmissionForm((current) => ({ ...current, authorization_status: 'PENDING' }));
     }
@@ -502,9 +599,10 @@ export default function AdmissionPanelPage() {
                       {coverageDraft.payer_id ? (
                         <select
                           value={coverageDraft.health_plan_id}
-                          onChange={(e) =>
-                            setCoverageDraft({ ...coverageDraft, health_plan_id: e.target.value })
-                          }
+                          onChange={(e) => {
+                            setCoverageDraft({ ...coverageDraft, health_plan_id: e.target.value });
+                            resetAuthorization();
+                          }}
                           className="rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-teal-500"
                         >
                           <option value="">Sin plan</option>
@@ -563,6 +661,117 @@ export default function AdmissionPanelPage() {
                     </div>
                   )}
 
+                  {selectedPlanId && (
+                    <div className="space-y-3 rounded-lg border border-teal-100 bg-teal-50/40 p-4">
+                      <div className="flex items-center gap-2">
+                        <KeyRound className="h-4 w-4 text-teal-600" />
+                        <h3 className="text-sm font-bold text-slate-700">
+                          Autorizacion de la cobertura
+                        </h3>
+                      </div>
+                      <p className="text-xs text-slate-500">
+                        Codigo de 3 digitos que la cobertura le dio al afiliado. Se valida contra
+                        la prestadora antes de confirmar el ingreso.
+                      </p>
+                      <div className="grid gap-3 md:grid-cols-[minmax(0,1fr)_140px_auto]">
+                        <select
+                          value={authDraft.practice_id}
+                          onChange={(e) => {
+                            setAuthDraft({ ...authDraft, practice_id: e.target.value });
+                            setPayerAnswer(null);
+                          }}
+                          className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-teal-500"
+                        >
+                          <option value="">Practica a autorizar</option>
+                          {authorizablePractices.map((practice) => (
+                            <option key={practice.id} value={practice.id}>
+                              {practice.code} - {practice.name}
+                            </option>
+                          ))}
+                        </select>
+                        <input
+                          inputMode="numeric"
+                          maxLength={3}
+                          placeholder="Codigo (3 digitos)"
+                          value={authDraft.code}
+                          onChange={(e) => {
+                            setAuthDraft({
+                              ...authDraft,
+                              code: e.target.value.replace(/\D/g, '').slice(0, 3),
+                            });
+                            setPayerAnswer(null);
+                          }}
+                          className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-teal-500"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => verifyAuthorizationMutation.mutate()}
+                          disabled={
+                            authDraft.code.length !== 3 || verifyAuthorizationMutation.isPending
+                          }
+                          className="rounded-lg bg-slate-900 px-3 py-2 text-sm font-semibold text-white disabled:opacity-50"
+                        >
+                          {verifyAuthorizationMutation.isPending ? 'Validando...' : 'Validar'}
+                        </button>
+                      </div>
+
+                      {verifyAuthorizationMutation.isError && (
+                        <p className="rounded-lg bg-red-50 px-3 py-2 text-xs text-red-600">
+                          {apiErrorMessage(
+                            verifyAuthorizationMutation.error,
+                            'No se pudo consultar a la cobertura.',
+                          )}
+                        </p>
+                      )}
+
+                      {payerAnswer?.authorized && (
+                        <div className="rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-3 text-xs text-emerald-800">
+                          <p className="font-semibold">{payerAnswer.message}</p>
+                          <p className="mt-1">
+                            Autorizacion {payerAnswer.authorization_number}
+                            {payerAnswer.valid_until
+                              ? ` · vigente hasta ${formatDate(payerAnswer.valid_until)}`
+                              : ''}
+                          </p>
+                          {Number(payerAnswer.copayment_amount) > 0 ? (
+                            <p className="mt-2 flex items-center gap-2 font-semibold">
+                              <Wallet className="h-4 w-4" />
+                              Copago a cargo del paciente:{' '}
+                              {money(payerAnswer.copayment_amount, payerAnswer.currency)}
+                            </p>
+                          ) : (
+                            payerAnswer.practice_id && (
+                              <p className="mt-2">
+                                La practica no tiene copago: la cubre el plan en su totalidad.
+                              </p>
+                            )
+                          )}
+                        </div>
+                      )}
+
+                      {payerAnswer && !payerAnswer.authorized && (
+                        <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-xs text-amber-800">
+                          <p className="font-semibold">{payerAnswer.message}</p>
+                          <p className="mt-1">
+                            {payerAnswer.private_amount
+                              ? `Se puede hacer en forma particular: el paciente abona ${money(
+                                  payerAnswer.private_amount,
+                                  payerAnswer.currency,
+                                )}.`
+                              : 'Se puede hacer en forma particular; la practica no tiene valor cargado en el nomenclador.'}
+                          </p>
+                          <button
+                            type="button"
+                            onClick={takePrivate}
+                            className="mt-2 rounded-lg bg-amber-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-amber-700"
+                          >
+                            Atender como particular
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                  )}
+
                   <label
                     className={`flex cursor-pointer items-center gap-3 rounded-lg border px-4 py-3 transition-colors ${
                       coverageChoice === 'NONE'
@@ -581,6 +790,22 @@ export default function AdmissionPanelPage() {
                       Particular, sin cobertura
                     </span>
                   </label>
+
+                  {privateFallback && coverageChoice === 'NONE' && (
+                    <p className="flex items-center gap-2 rounded-lg bg-amber-50 px-4 py-3 text-xs font-medium text-amber-800">
+                      <Wallet className="h-4 w-4 shrink-0" />
+                      <span>
+                        {privateFallback.practice_name ?? 'La practica'} se hace en forma
+                        particular porque {privateFallback.payer_name} no la autorizo
+                        {privateFallback.private_amount
+                          ? `: el paciente abona ${money(
+                              privateFallback.private_amount,
+                              privateFallback.currency,
+                            )}.`
+                          : '. La practica no tiene valor cargado en el nomenclador.'}
+                      </span>
+                    </p>
+                  )}
                 </div>
               )}
 
@@ -816,7 +1041,10 @@ export default function AdmissionPanelPage() {
               </div>
               {createAdmissionMutation.isError && (
                 <p className="mt-3 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-600">
-                  No se pudo confirmar la admision. Revisa identidad, duplicados y autorizacion.
+                  {apiErrorMessage(
+                    createAdmissionMutation.error,
+                    'No se pudo confirmar la admision. Revisa identidad, duplicados y autorizacion.',
+                  )}
                 </p>
               )}
             </Card>

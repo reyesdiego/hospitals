@@ -3,6 +3,7 @@
 import uuid
 from datetime import UTC, datetime
 
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.exceptions import DomainError, integrity_conflict
@@ -17,12 +18,17 @@ from app.models.admission import (
 )
 from app.models.audit import HospitalizationEventType
 from app.models.authorization import Authorization, AuthorizationState, AuthorizationType
-from app.models.bed import Bed
+from app.models.bed import Bed, BedAssignment
 from app.models.coverage import PatientCoverage
 from app.models.facility import Facility
-from app.models.hospitalization import Hospitalization
+from app.models.hospitalization import (
+    OPEN_HOSPITALIZATION_STATUSES,
+    Hospitalization,
+    HospitalizationServiceAssignment,
+)
 from app.models.patient import Patient
 from app.models.professional import Professional
+from app.models.room import Room
 from app.models.service import Service
 from app.schemas.domain import AdministrativeDischargeCreate, AdmissionCreate
 from app.services.audit import record_event
@@ -40,6 +46,31 @@ _AUTHORIZATION_STATES = {
     AuthorizationStatus.AUTHORIZED: AuthorizationState.AUTHORIZED,
     AuthorizationStatus.REJECTED: AuthorizationState.REJECTED,
 }
+
+
+def open_hospitalization_message(
+    bed: Bed | None,
+    room: Room | None,
+    service: Service | None,
+    facility: Facility | None,
+) -> str:
+    """Dónde está internado el paciente, dicho para el mostrador de admisión."""
+
+    if bed and room:
+        where = f"cama {bed.code} (habitación {room.code}, ala {bed.ward})"
+    elif bed:
+        where = f"cama {bed.code} (ala {bed.ward})"
+    else:
+        # Internación abierta esperando cama: el paciente está admitido igual.
+        where = "todavía sin cama asignada"
+    parts = [where, f"servicio {service.name}" if service else "sin servicio responsable"]
+    if facility:
+        parts.append(facility.name)
+    return (
+        "El paciente ya tiene una internación activa: "
+        + " · ".join(parts)
+        + ". Para admitirlo de nuevo primero hay que cerrar esa internación."
+    )
 
 
 class AdmissionWorkflowService:
@@ -63,6 +94,7 @@ class AdmissionWorkflowService:
             patient = await self.session.get(Patient, payload.patient_id)
             if not patient:
                 raise DomainError("Paciente inexistente", 404)
+            await self._require_no_open_hospitalization(payload.patient_id)
             if payload.requesting_service_id and not await self.session.get(
                 Service, payload.requesting_service_id
             ):
@@ -240,6 +272,50 @@ class AdmissionWorkflowService:
                 notes="Registrada junto con la solicitud de admisión",
             )
         )
+
+    async def _require_no_open_hospitalization(self, patient_id: uuid.UUID) -> None:
+        """El mismo paciente no puede estar internado dos veces a la vez.
+
+        Es el duplicado que más caro sale: la segunda internación abre otra cuenta y parte
+        la historia clínica en dos. El error dice dónde está internado el paciente —cama,
+        servicio y centro— porque es lo que la admisión necesita para ubicarlo, y no
+        "revise duplicados".
+        """
+
+        row = (
+            await self.session.execute(
+                select(Bed, Room, Service, Facility)
+                .select_from(Hospitalization)
+                # La cama y el servicio son los que tiene ahora; puede no tener ninguno
+                # todavía si la internación está esperando cama.
+                .outerjoin(
+                    BedAssignment,
+                    (BedAssignment.hospitalization_id == Hospitalization.id)
+                    & (BedAssignment.ended_at.is_(None)),
+                )
+                .outerjoin(Bed, Bed.id == BedAssignment.bed_id)
+                .outerjoin(Room, Room.id == Bed.room_id)
+                .outerjoin(
+                    HospitalizationServiceAssignment,
+                    (HospitalizationServiceAssignment.hospitalization_id == Hospitalization.id)
+                    & (HospitalizationServiceAssignment.ended_at.is_(None)),
+                )
+                .outerjoin(Service, Service.id == HospitalizationServiceAssignment.service_id)
+                .outerjoin(
+                    Facility,
+                    Facility.id == func.coalesce(Bed.facility_id, Hospitalization.facility_id),
+                )
+                .where(
+                    Hospitalization.patient_id == patient_id,
+                    Hospitalization.status.in_(OPEN_HOSPITALIZATION_STATUSES),
+                )
+                .order_by(Hospitalization.created_at.desc())
+                .limit(1)
+            )
+        ).first()
+        if row is None:
+            return
+        raise DomainError(open_hospitalization_message(*row), 409)
 
     async def _resolve_facility(self, payload: AdmissionCreate) -> uuid.UUID | None:
         if payload.facility_id:

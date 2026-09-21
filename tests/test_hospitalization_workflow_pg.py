@@ -125,6 +125,65 @@ def test_admission_request_with_requested_bed_confirms_the_admission():
     assert bed_status == BedStatus.OCCUPIED
 
 
+def test_a_patient_already_hospitalized_cannot_be_admitted_again():
+    """El duplicado que importa no es el del padrón: es el paciente ya internado."""
+
+    async def case(factory):
+        async with factory() as setup:
+            scenario = await build_scenario(setup)
+        await admitted_hospitalization(factory, scenario)
+        async with factory() as session:
+            with pytest.raises(DomainError) as error:
+                await AdmissionWorkflowService(session).create(admission_payload(scenario))
+            return error.value.status_code, error.value.message
+
+    status_code, message = run_db(case)
+
+    assert status_code == 409
+    # El mensaje ubica al paciente: cama, habitación, servicio y centro.
+    assert "internación activa" in message
+    assert "101-0" in message
+    assert "habitación 101" in message
+    assert "Clínica Médica" in message
+    assert "Hospital Central" in message
+
+
+def test_a_hospitalization_waiting_for_a_bed_also_blocks_a_new_admission():
+    async def case(factory):
+        async with factory() as setup:
+            scenario = await build_scenario(setup)
+        async with factory() as session:
+            await AdmissionWorkflowService(session).create(admission_payload(scenario))
+        async with factory() as session:
+            with pytest.raises(DomainError) as error:
+                await AdmissionWorkflowService(session).create(admission_payload(scenario))
+            return error.value.message
+
+    message = run_db(case)
+
+    assert "todavía sin cama asignada" in message
+
+
+def test_the_patient_can_be_admitted_again_after_the_administrative_discharge():
+    async def case(factory):
+        async with factory() as setup:
+            scenario = await build_scenario(setup)
+        hospitalization_id = await admitted_hospitalization(factory, scenario)
+        async with factory() as session:
+            await HospitalizationService(session).complete_stay(
+                await session.get(Hospitalization, hospitalization_id),
+                AdministrativeDischargeCreate(),
+            )
+            await session.commit()
+        async with factory() as session:
+            admission = await AdmissionWorkflowService(session).create(
+                admission_payload(scenario)
+            )
+            return admission.status
+
+    assert run_db(case) == AdmissionStatus.PENDING_BED
+
+
 def test_admission_request_requires_identity_validation():
     async def case(factory):
         async with factory() as setup:

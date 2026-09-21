@@ -11,6 +11,7 @@ from app.api.bed_router import router as bed_router
 from app.api.dependencies import DbSession, enforce_permissions
 from app.api.hospitalization_router import router as hospitalization_router
 from app.api.nursing_router import router as nursing_router
+from app.api.payer_mock_router import router as payer_mock_router
 from app.api.practice_router import router as practice_router
 from app.api.prescription_router import router as prescription_router
 from app.api.presenters import bed_read, room_read
@@ -681,3 +682,4 @@ api_router.include_router(bed_router, dependencies=protected)
 api_router.include_router(practice_router, dependencies=protected)
 api_router.include_router(nursing_router, dependencies=protected)
 api_router.include_router(prescription_router, dependencies=protected)
+api_router.include_router(payer_mock_router, dependencies=protected)
