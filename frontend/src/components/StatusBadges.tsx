@@ -24,6 +24,7 @@ const BED_STATUS_LABELS: Record<BedStatus, string> = {
 };
 
 const HOSP_STATUS_COLORS: Record<HospitalizationStatus, string> = {
+  AWAITING_ARRIVAL: 'bg-sky-50 text-sky-700',
   PENDING_BED: 'bg-amber-50 text-amber-700',
   IN_PROGRESS: 'bg-teal-50 text-teal-700',
   DISCHARGE_PLANNED: 'bg-indigo-50 text-indigo-700',
@@ -34,6 +35,7 @@ const HOSP_STATUS_COLORS: Record<HospitalizationStatus, string> = {
 };
 
 const HOSP_STATUS_LABELS: Record<HospitalizationStatus, string> = {
+  AWAITING_ARRIVAL: 'Esperando ingreso',
   PENDING_BED: 'Pendiente de cama',
   IN_PROGRESS: 'En curso',
   DISCHARGE_PLANNED: 'Alta planificada',

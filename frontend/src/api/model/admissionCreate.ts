@@ -22,16 +22,8 @@ export interface AdmissionCreate {
   coverage?: PatientCoverageCreate | null;
   authorization_status?: AuthorizationStatus;
   authorization_number?: string | null;
-  /**
-     * @minLength 1
-     * @maxLength 150
-     */
-  responsible_contact_name: string;
-  /**
-     * @minLength 1
-     * @maxLength 80
-     */
-  responsible_contact_phone: string;
+  responsible_contact_name?: string | null;
+  responsible_contact_phone?: string | null;
   responsible_contact_relationship?: string | null;
   /**
      * @minLength 3
@@ -49,6 +41,11 @@ export interface AdmissionCreate {
   /** @maxItems 20 */
   diagnoses?: HospitalizationDiagnosisCreate[];
   requested_bed_id?: string | null;
+  /**
+     * @minimum 1
+     * @maximum 10080
+     */
+  bed_reservation_expires_in_minutes?: number;
   consents?: AdmissionConsentCreate[];
   notes?: string | null;
   confirm_admission?: boolean;

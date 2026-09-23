@@ -7,9 +7,10 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.exceptions import DomainError, integrity_conflict
+from app.models.account import Account, AccountStatus, Payment, PaymentStatus
 from app.models.admission import (
     Admission,
-    AdmissionConsent,
+    AdmissionOrigin,
     AdmissionStatus,
     AuthorizationStatus,
     Episode,
@@ -26,14 +27,21 @@ from app.models.hospitalization import (
     OPEN_HOSPITALIZATION_STATUSES,
     Hospitalization,
     HospitalizationServiceAssignment,
+    HospitalizationStatus,
 )
 from app.models.patient import Patient
 from app.models.professional import Professional
 from app.models.room import Room
 from app.models.service import Service
-from app.schemas.domain import AdministrativeDischargeCreate, AdmissionCreate
+from app.schemas.domain import (
+    AdministrativeDischargeCreate,
+    AdmissionCancelCreate,
+    AdmissionCreate,
+)
+from app.services.admission_arrival import add_consents
 from app.services.audit import record_event
 from app.services.bed_assignment import BedAssignmentService
+from app.services.bed_reservation import BedReservationService
 from app.services.diagnosis import record_diagnoses
 from app.services.hospitalization import HospitalizationService
 from app.services.registry import build_coverage
@@ -88,6 +96,13 @@ class AdmissionWorkflowService:
             raise DomainError("La autorización está pendiente", 409)
         if payload.authorization_status == AuthorizationStatus.REJECTED:
             raise DomainError("La autorización fue rechazada", 409)
+        contact_name = (payload.responsible_contact_name or "").strip() or None
+        contact_phone = (payload.responsible_contact_phone or "").strip() or None
+        # En la orden médica programada el paciente todavía no llegó: se le reserva la cama
+        # y el contacto se toma cuando se presenta.
+        scheduled_order = payload.origin == AdmissionOrigin.SCHEDULED_MEDICAL_ORDER
+        if not scheduled_order and not (contact_name and contact_phone):
+            raise DomainError("Falta el contacto responsable: nombre y teléfono", 422)
 
         async with (
             integrity_conflict(self.session, "La cama solicitada ya no está disponible"),
@@ -135,6 +150,7 @@ class AdmissionWorkflowService:
                 attending_physician_id=payload.responsible_physician_id,
                 coverage_id=coverage_id,
                 at=now,
+                awaiting_arrival=scheduled_order,
             )
 
             # Los diagnósticos de ingreso son presuntivos: se asientan con la admisión y
@@ -166,8 +182,8 @@ class AdmissionWorkflowService:
                 duplicate_checked=payload.duplicate_checked,
                 authorization_status=payload.authorization_status,
                 authorization_number=payload.authorization_number,
-                responsible_contact_name=payload.responsible_contact_name,
-                responsible_contact_phone=payload.responsible_contact_phone,
+                responsible_contact_name=contact_name,
+                responsible_contact_phone=contact_phone,
                 responsible_contact_relationship=payload.responsible_contact_relationship,
                 admission_reason=payload.admission_reason,
                 responsible_physician=payload.responsible_physician,
@@ -179,16 +195,7 @@ class AdmissionWorkflowService:
             self.session.add(admission)
             await self.session.flush()
 
-            for consent in payload.consents:
-                self.session.add(
-                    AdmissionConsent(
-                        admission_id=admission.id,
-                        consent_type=consent.consent_type,
-                        signed_by=consent.signed_by,
-                        signed_at=consent.signed_at or now,
-                        notes=consent.notes,
-                    )
-                )
+            add_consents(self.session, admission, payload.consents, now)
             self._record_initial_authorization(admission, coverage_id, now)
             record_event(
                 self.session,
@@ -203,7 +210,16 @@ class AdmissionWorkflowService:
                 },
             )
 
-            if payload.requested_bed_id and payload.confirm_admission:
+            if payload.requested_bed_id and scheduled_order:
+                # La cama queda tomada para el paciente, sin ocuparla: la admisión sigue
+                # esperando cama hasta que llega y se confirma la reserva.
+                await BedReservationService(self.session).reserve_in_transaction(
+                    hospitalization.id,
+                    payload.requested_bed_id,
+                    expires_in_minutes=payload.bed_reservation_expires_in_minutes,
+                    reason=payload.admission_reason,
+                )
+            elif payload.requested_bed_id and payload.confirm_admission:
                 await BedAssignmentService(self.session).assign(
                     hospitalization.id,
                     payload.requested_bed_id,
@@ -255,6 +271,64 @@ class AdmissionWorkflowService:
                 episode = await self.session.get(Episode, admission.episode_id)
                 if episode and episode.status == EpisodeStatus.OPEN:
                     episode.status = EpisodeStatus.CLOSED
+                    episode.closed_at = now
+            return admission
+
+    async def cancel(self, admission_id: uuid.UUID, payload: AdmissionCancelCreate) -> Admission:
+        """Da de baja una orden médica programada cuyo paciente nunca llegó.
+
+        No es un alta: no hubo internación que cerrar. Libera la cama reservada y deja
+        cancelados la internación, su cuenta y el episodio, todo en una transacción.
+        """
+
+        async with self.session.begin():
+            admission = await self.session.get(Admission, admission_id, with_for_update=True)
+            if not admission:
+                raise DomainError("Admisión inexistente", 404)
+            hospitalization = (
+                await self.session.get(
+                    Hospitalization, admission.hospitalization_id, with_for_update=True
+                )
+                if admission.hospitalization_id
+                else None
+            )
+            if (
+                hospitalization is None
+                or hospitalization.status != HospitalizationStatus.AWAITING_ARRIVAL
+            ):
+                raise DomainError(
+                    "Solo se cancela una orden programada cuyo paciente todavía no ingresó",
+                    409,
+                )
+            account = await self.session.scalar(
+                select(Account).where(Account.hospitalization_id == hospitalization.id)
+            )
+            if account and await self.session.scalar(
+                select(Payment.id).where(
+                    Payment.account_id == account.id,
+                    Payment.status == PaymentStatus.CONFIRMED,
+                )
+            ):
+                raise DomainError(
+                    "La cuenta tiene pagos registrados: anúlelos antes de cancelar la orden",
+                    409,
+                )
+
+            now = datetime.now(UTC)
+            await HospitalizationService(self.session).cancel_pending(
+                hospitalization.id,
+                reason=payload.reason,
+                actor=payload.cancelled_by,
+            )
+            if account and account.status == AccountStatus.OPEN:
+                account.status = AccountStatus.CANCELLED
+                account.closed_at = now
+            admission.status = AdmissionStatus.CANCELLED
+            admission.notes = payload.reason
+            if admission.episode_id:
+                episode = await self.session.get(Episode, admission.episode_id)
+                if episode and episode.status == EpisodeStatus.OPEN:
+                    episode.status = EpisodeStatus.CANCELLED
                     episode.closed_at = now
             return admission
 

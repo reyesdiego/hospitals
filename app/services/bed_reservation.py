@@ -37,61 +37,80 @@ class BedReservationService:
             integrity_conflict(self.session, "La cama ya tiene una reserva activa"),
             self.session.begin(),
         ):
-            hospitalization = await self._hospitalization_for_update(hospitalization_id)
-            if hospitalization.status not in OPEN_HOSPITALIZATION_STATUSES:
-                raise DomainError("La internación no está activa", 409)
-
-            # Locking the bed row first serializes concurrent reservations on it.
-            bed = await self.session.get(Bed, bed_id, with_for_update=True)
-            if not bed:
-                raise DomainError("Cama inexistente", 404)
-
-            now = datetime.now(UTC)
-            await self._expire_reservation_for_bed(bed, now=now)
-
-            if bed.status != BedStatus.AVAILABLE:
-                raise DomainError("La cama no está disponible", 409)
-            if await self._active_assignment_for_bed(bed_id):
-                raise DomainError("La cama está ocupada por una internación", 409)
-            if await self.active_for_hospitalization(hospitalization_id, lock=True):
-                raise DomainError("La internación ya tiene una reserva activa", 409)
-            if await self._active_assignment_for_hospitalization(hospitalization_id):
-                raise DomainError("La internación ya tiene una cama asignada", 409)
-
-            reservation = BedReservation(
-                hospitalization_id=hospitalization_id,
-                bed_id=bed_id,
-                status=BedReservationStatus.ACTIVE,
-                reserved_at=now,
-                expires_at=now + timedelta(minutes=expires_in_minutes)
-                if expires_in_minutes
-                else None,
+            return await self.reserve_in_transaction(
+                hospitalization_id,
+                bed_id,
+                expires_in_minutes=expires_in_minutes,
                 reserved_by=reserved_by,
                 reason=reason,
             )
-            self.session.add(reservation)
-            apply_bed_status(
-                self.session,
-                bed,
-                BedStatus.RESERVED,
-                changed_by=reserved_by,
-                reason=reason,
-                at=now,
-                hospitalization_id=hospitalization_id,
-                record_audit_event=False,
-            )
-            record_event(
-                self.session,
-                HospitalizationEventType.BED_RESERVED,
-                hospitalization_id=hospitalization_id,
-                bed_id=bed_id,
-                patient_id=hospitalization.patient_id,
-                actor=reserved_by,
-                occurred_at=now,
-                details={"expires_at": reservation.expires_at.isoformat() if reservation.expires_at else None},
-            )
-            await self.session.flush()
-            return reservation
+
+    async def reserve_in_transaction(
+        self,
+        hospitalization_id: uuid.UUID,
+        bed_id: uuid.UUID,
+        *,
+        expires_in_minutes: int | None = 120,
+        reserved_by: str | None = None,
+        reason: str | None = None,
+    ) -> BedReservation:
+        """Same as :meth:`reserve`, inside a transaction the caller already opened."""
+
+        hospitalization = await self._hospitalization_for_update(hospitalization_id)
+        if hospitalization.status not in OPEN_HOSPITALIZATION_STATUSES:
+            raise DomainError("La internación no está activa", 409)
+
+        # Locking the bed row first serializes concurrent reservations on it.
+        bed = await self.session.get(Bed, bed_id, with_for_update=True)
+        if not bed:
+            raise DomainError("Cama inexistente", 404)
+
+        now = datetime.now(UTC)
+        await self._expire_reservation_for_bed(bed, now=now)
+
+        if bed.status != BedStatus.AVAILABLE:
+            raise DomainError("La cama no está disponible", 409)
+        if await self._active_assignment_for_bed(bed_id):
+            raise DomainError("La cama está ocupada por una internación", 409)
+        if await self.active_for_hospitalization(hospitalization_id, lock=True):
+            raise DomainError("La internación ya tiene una reserva activa", 409)
+        if await self._active_assignment_for_hospitalization(hospitalization_id):
+            raise DomainError("La internación ya tiene una cama asignada", 409)
+
+        reservation = BedReservation(
+            hospitalization_id=hospitalization_id,
+            bed_id=bed_id,
+            status=BedReservationStatus.ACTIVE,
+            reserved_at=now,
+            expires_at=now + timedelta(minutes=expires_in_minutes)
+            if expires_in_minutes
+            else None,
+            reserved_by=reserved_by,
+            reason=reason,
+        )
+        self.session.add(reservation)
+        apply_bed_status(
+            self.session,
+            bed,
+            BedStatus.RESERVED,
+            changed_by=reserved_by,
+            reason=reason,
+            at=now,
+            hospitalization_id=hospitalization_id,
+            record_audit_event=False,
+        )
+        record_event(
+            self.session,
+            HospitalizationEventType.BED_RESERVED,
+            hospitalization_id=hospitalization_id,
+            bed_id=bed_id,
+            patient_id=hospitalization.patient_id,
+            actor=reserved_by,
+            occurred_at=now,
+            details={"expires_at": reservation.expires_at.isoformat() if reservation.expires_at else None},
+        )
+        await self.session.flush()
+        return reservation
 
     async def cancel(
         self,
@@ -150,6 +169,32 @@ class BedReservationService:
                     event_type=HospitalizationEventType.BED_RESERVATION_EXPIRED,
                 )
             return expired
+
+    async def cancel_active_for_hospitalization(
+        self,
+        hospitalization_id: uuid.UUID,
+        *,
+        now: datetime,
+        actor: str | None = None,
+        reason: str | None = None,
+    ) -> BedReservation | None:
+        """Libera la cama que tenía reservada una internación que no va a seguir.
+
+        Non-transactional: runs inside the transaction of whoever cancels the stay.
+        """
+
+        reservation = await self.active_for_hospitalization(hospitalization_id, lock=True)
+        if reservation is None:
+            return None
+        await self._close_reservation(
+            reservation,
+            BedReservationStatus.CANCELLED,
+            now=now,
+            actor=actor,
+            reason=reason,
+            event_type=HospitalizationEventType.BED_RESERVATION_CANCELLED,
+        )
+        return reservation
 
     async def list_for_hospitalization(
         self,

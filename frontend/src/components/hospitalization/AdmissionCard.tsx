@@ -103,9 +103,9 @@ export function AdmissionCard({ hosp }: { hosp: HospitalizationRead }) {
           label="Contacto responsable"
           value={
             <>
-              {admission.responsible_contact_name}
+              {admission.responsible_contact_name ?? 'Pendiente: se toma cuando llega el paciente'}
               <span className="block text-xs font-normal text-slate-400">
-                {admission.responsible_contact_phone}
+                {admission.responsible_contact_phone ?? ''}
                 {admission.responsible_contact_relationship
                   ? ` · ${admission.responsible_contact_relationship}`
                   : ''}

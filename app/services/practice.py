@@ -40,7 +40,7 @@ from app.schemas.practice import (
     MedicalPracticeTariffUpdate,
     MedicalPracticeUpdate,
 )
-from app.services.access import require_editable
+from app.services.access import require_editable, require_patient_arrived
 from app.services.account import add_charge, require_open_account
 from app.services.audit import record_event
 from app.services.plan_coverage import PlanCoverageCheck, evaluate_coverage
@@ -759,6 +759,7 @@ class HospitalizationPracticeService:
         hospitalization_id: uuid.UUID,
     ) -> Hospitalization:
         hospitalization = await self._require_hospitalization(hospitalization_id)
+        require_patient_arrived(hospitalization)
         if hospitalization.status not in OPEN_HOSPITALIZATION_STATUSES:
             raise DomainError("La internación ya no admite prácticas", 409)
         return hospitalization

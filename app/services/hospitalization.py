@@ -52,6 +52,7 @@ from app.schemas.workflow import (
     PhysicalDepartureCreate,
     ServiceAssignmentCreate,
 )
+from app.services.access import require_patient_arrived
 from app.services.account import (
     Account,
     mark_ready_for_review,
@@ -60,6 +61,7 @@ from app.services.account import (
 )
 from app.services.audit import record_event
 from app.services.bed_assignment import BedAssignmentService
+from app.services.bed_reservation import BedReservationService
 from app.services.diagnosis import record_diagnoses
 from app.services.service_assignment import active_service_assignment, reassign_service
 
@@ -139,9 +141,16 @@ class HospitalizationService:
         """
 
         hospitalization = await self._for_update(hospitalization_id)
-        if hospitalization.status != HospitalizationStatus.PENDING_BED:
+        if hospitalization.status not in {
+            HospitalizationStatus.AWAITING_ARRIVAL,
+            HospitalizationStatus.PENDING_BED,
+        }:
             return hospitalization
         now = datetime.now(UTC)
+        # Una cama reservada para una internación que no sigue queda libre para otro.
+        await BedReservationService(self.session).cancel_active_for_hospitalization(
+            hospitalization.id, now=now, actor=actor, reason=reason
+        )
         hospitalization.status = HospitalizationStatus.CANCELLED
         await self.session.execute(
             update(HospitalizationServiceAssignment)
@@ -176,6 +185,7 @@ class HospitalizationService:
         admission_id: uuid.UUID | None = None,
         actor: str | None = None,
         at: datetime | None = None,
+        awaiting_arrival: bool = False,
     ) -> Hospitalization:
         """Create the inpatient process plus the entities that always accompany it.
 
@@ -202,7 +212,9 @@ class HospitalizationService:
             episode_id=episode_id,
             facility_id=facility_id,
             admission_type=admission_type,
-            status=HospitalizationStatus.PENDING_BED,
+            status=HospitalizationStatus.AWAITING_ARRIVAL
+            if awaiting_arrival
+            else HospitalizationStatus.PENDING_BED,
             admission_reason=admission_reason,
         )
         self.session.add(hospitalization)
@@ -264,6 +276,7 @@ class HospitalizationService:
             self.session.begin(),
         ):
             hospitalization = await self._for_update(hospitalization_id)
+            require_patient_arrived(hospitalization)
             if hospitalization.status not in OPEN_HOSPITALIZATION_STATUSES:
                 raise DomainError("La internación no está activa", 409)
             if not await self.session.get(Service, payload.service_id):
@@ -328,6 +341,7 @@ class HospitalizationService:
             self.session.begin(),
         ):
             hospitalization = await self._for_update(hospitalization_id)
+            require_patient_arrived(hospitalization)
             if hospitalization.status not in OPEN_HOSPITALIZATION_STATUSES:
                 raise DomainError("La internación no está activa", 409)
             if not await self.session.get(Professional, payload.practitioner_id):
@@ -359,6 +373,7 @@ class HospitalizationService:
             )
             if not care_team:
                 raise DomainError("La internación no tiene equipo asistencial", 404)
+            require_patient_arrived(await self._for_update(hospitalization_id))
             member = await self.session.get(CareTeamMember, member_id, with_for_update=True)
             if not member or member.care_team_id != care_team.id:
                 raise DomainError("Integrante inexistente", 404)

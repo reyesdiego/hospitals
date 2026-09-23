@@ -7,6 +7,7 @@ import { getPractices } from '@/api/endpoints/practices/practices';
 import { getRegistry } from '@/api/endpoints/registry/registry';
 import type {
   AdmissionCreate,
+  AdmissionDashboardRead,
   DiagnosisRole,
   HospitalizationDiagnosisCreate,
   PatientCoverageCreate,
@@ -15,6 +16,7 @@ import type {
 } from '@/api/model';
 import { Badge, Card, EmptyState, ErrorState, PageHeader, Spinner } from '@/components/ui';
 import DiagnosisPicker from '@/components/diagnoses/DiagnosisPicker';
+import CancelOrderModal from '@/components/hospitalization/CancelOrderModal';
 import ProfessionalPicker from '@/components/professionals/ProfessionalPicker';
 import { DIAGNOSIS_ROLE_LABELS } from '@/config/diagnosisLabels';
 import { money } from '@/components/practices/labels';
@@ -42,6 +44,15 @@ const ORIGIN_LABELS = {
   SPECIAL_CARE_UNIT: 'Unidad cuidados especiales',
   SCHEDULED_MEDICAL_ORDER: 'Orden medica programada',
 } as const;
+
+/** Cuanto se sostiene la cama de una orden medica programada hasta que el paciente llega. */
+const RESERVATION_WINDOWS = [
+  { minutes: 120, label: '2 horas' },
+  { minutes: 720, label: '12 horas' },
+  { minutes: 1440, label: '24 horas' },
+  { minutes: 4320, label: '3 dias' },
+  { minutes: 10080, label: '7 dias' },
+] as const;
 
 /** The clerk either picks a coverage the patient already has, loads a new one, or admits
  * the patient as private. */
@@ -93,10 +104,19 @@ const initialAdmission: AdmissionCreate = {
   requesting_service_id: null,
   presumptive_diagnosis: '',
   requested_bed_id: null,
+  bed_reservation_expires_in_minutes: 1440,
   consents: [],
   notes: '',
   confirm_admission: true,
 };
+
+/** Orden medica programada cuyo paciente todavia no ingreso: se cancela, no se da de alta. */
+function isPendingScheduledOrder(admission: AdmissionDashboardRead) {
+  return (
+    admission.origin === 'SCHEDULED_MEDICAL_ORDER' &&
+    ['PENDING_BED', 'PENDING_AUTHORIZATION'].includes(admission.status)
+  );
+}
 
 export default function AdmissionPanelPage() {
   const api = getDefault();
@@ -114,6 +134,8 @@ export default function AdmissionPanelPage() {
     PROCEDURE: false,
   });
   const [coverageChoice, setCoverageChoice] = useState<CoverageChoice>('NONE');
+  /** Orden programada que se esta por dar de baja porque el paciente no va a venir. */
+  const [cancelling, setCancelling] = useState<AdmissionDashboardRead | null>(null);
   const [coverageDraft, setCoverageDraft] = useState<CoverageDraft>(emptyCoverageDraft);
   /** Codigo de autorizacion que la cobertura le dio al afiliado, y para que practica. */
   const [authDraft, setAuthDraft] = useState({ practice_id: '', code: '' });
@@ -332,6 +354,10 @@ export default function AdmissionPanelPage() {
       patient.document_number === patientForm.document_number,
   );
 
+  /** En la orden medica programada el paciente todavia no llego: se le reserva la cama, y el
+   * contacto y los consentimientos se toman cuando se presenta. */
+  const scheduledOrder = admissionForm.origin === 'SCHEDULED_MEDICAL_ORDER';
+
   const steps = [
     { label: 'Paciente', done: Boolean(admissionForm.patient_id) },
     { label: 'Identidad', done: Boolean(admissionForm.identity_validated) },
@@ -342,7 +368,7 @@ export default function AdmissionPanelPage() {
         coverageChoice !== 'NEW' ||
         Boolean(coverageDraft.payer_id || coverageDraft.payer_name.trim()),
     },
-    { label: 'Consentimientos', done: signedConsents.GENERAL_ADMISSION },
+    { label: 'Consentimientos', done: scheduledOrder || signedConsents.GENERAL_ADMISSION },
     {
       label: 'Ingreso',
       done: Boolean(admissionForm.admission_reason && admissionForm.responsible_physician_id),
@@ -395,6 +421,8 @@ export default function AdmissionPanelPage() {
       }));
     createAdmissionMutation.mutate({
       ...admissionForm,
+      responsible_contact_name: admissionForm.responsible_contact_name?.trim() || null,
+      responsible_contact_phone: admissionForm.responsible_contact_phone?.trim() || null,
       ...coveragePayload(),
       diagnoses: diagnoses.map(({ code, role }) => ({ code, role })),
       requested_bed_id: admissionForm.requested_bed_id || null,
@@ -864,9 +892,18 @@ export default function AdmissionPanelPage() {
               <div className="grid gap-4 md:grid-cols-3">
                 <select
                   value={admissionForm.origin}
-                  onChange={(e) =>
-                    setAdmissionForm({ ...admissionForm, origin: e.target.value as AdmissionCreate['origin'] })
-                  }
+                  onChange={(e) => {
+                    const origin = e.target.value as AdmissionCreate['origin'];
+                    setAdmissionForm({
+                      ...admissionForm,
+                      origin,
+                      // Una orden programada no es una urgencia.
+                      admission_type:
+                        origin === 'SCHEDULED_MEDICAL_ORDER' && admissionForm.admission_type === 'EMERGENCY'
+                          ? 'SCHEDULED'
+                          : admissionForm.admission_type,
+                    });
+                  }}
                   className="rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-teal-500"
                 >
                   {Object.entries(ORIGIN_LABELS).map(([value, label]) => (
@@ -1028,21 +1065,28 @@ export default function AdmissionPanelPage() {
               <div className="mb-4 flex items-center gap-2">
                 <FileSignature className="h-5 w-5 text-teal-600" />
                 <h2 className="text-base font-bold text-slate-800">Contacto y consentimientos</h2>
+                {scheduledOrder && <Badge status="Opcional" color="bg-slate-100 text-slate-500" />}
               </div>
+              {scheduledOrder && (
+                <p className="mb-4 rounded-lg bg-slate-50 px-4 py-2 text-xs text-slate-500">
+                  Orden medica programada: el paciente todavia no llego. El contacto y los
+                  consentimientos se pueden tomar cuando se presente a internarse.
+                </p>
+              )}
               <div className="grid gap-4 md:grid-cols-3">
                 <input
-                  required
+                  required={!scheduledOrder}
                   placeholder="Contacto responsable"
-                  value={admissionForm.responsible_contact_name}
+                  value={admissionForm.responsible_contact_name ?? ''}
                   onChange={(e) =>
                     setAdmissionForm({ ...admissionForm, responsible_contact_name: e.target.value })
                   }
                   className="rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-teal-500"
                 />
                 <input
-                  required
+                  required={!scheduledOrder}
                   placeholder="Telefono"
-                  value={admissionForm.responsible_contact_phone}
+                  value={admissionForm.responsible_contact_phone ?? ''}
                   onChange={(e) =>
                     setAdmissionForm({ ...admissionForm, responsible_contact_phone: e.target.value })
                   }
@@ -1087,22 +1131,58 @@ export default function AdmissionPanelPage() {
             <Card className="p-5">
               <div className="mb-4 flex items-center gap-2">
                 <BedDouble className="h-5 w-5 text-teal-600" />
-                <h2 className="text-base font-bold text-slate-800">Solicitud de cama</h2>
+                <h2 className="text-base font-bold text-slate-800">
+                  {scheduledOrder ? 'Reserva de cama' : 'Solicitud de cama'}
+                </h2>
               </div>
-              <select
-                value={admissionForm.requested_bed_id ?? ''}
-                onChange={(e) =>
-                  setAdmissionForm({ ...admissionForm, requested_bed_id: e.target.value || null })
-                }
-                className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-teal-500"
+              {scheduledOrder && (
+                <p className="mb-3 text-xs text-slate-500">
+                  La cama queda reservada para el paciente sin ocuparla. Cuando llega, se confirma
+                  la reserva desde la internacion.
+                </p>
+              )}
+              <div
+                className={scheduledOrder ? 'grid gap-4 md:grid-cols-[minmax(0,1fr)_200px]' : undefined}
               >
-                <option value="">Confirmar ingreso sin cama asignada</option>
-                {availableBeds.map((bed) => (
-                  <option key={bed.id} value={bed.id}>
-                    {bed.code} - {bed.ward} Hab. {bed.room}
+                <select
+                  value={admissionForm.requested_bed_id ?? ''}
+                  onChange={(e) =>
+                    setAdmissionForm({ ...admissionForm, requested_bed_id: e.target.value || null })
+                  }
+                  className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-teal-500"
+                >
+                  <option value="">
+                    {scheduledOrder
+                      ? 'Registrar la orden sin reservar cama'
+                      : 'Confirmar ingreso sin cama asignada'}
                   </option>
-                ))}
-              </select>
+                  {availableBeds.map((bed) => (
+                    <option key={bed.id} value={bed.id}>
+                      {bed.code} - {bed.ward} Hab. {bed.room}
+                    </option>
+                  ))}
+                </select>
+                {scheduledOrder && (
+                  <select
+                    value={admissionForm.bed_reservation_expires_in_minutes ?? 1440}
+                    onChange={(e) =>
+                      setAdmissionForm({
+                        ...admissionForm,
+                        bed_reservation_expires_in_minutes: Number(e.target.value),
+                      })
+                    }
+                    disabled={!admissionForm.requested_bed_id}
+                    aria-label="Vigencia de la reserva"
+                    className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-teal-500 disabled:opacity-50"
+                  >
+                    {RESERVATION_WINDOWS.map((window) => (
+                      <option key={window.minutes} value={window.minutes}>
+                        Reserva por {window.label}
+                      </option>
+                    ))}
+                  </select>
+                )}
+              </div>
 
               <div className="mt-5 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                 <div className="flex flex-wrap gap-2">
@@ -1124,7 +1204,13 @@ export default function AdmissionPanelPage() {
                   className="inline-flex items-center justify-center gap-2 rounded-lg bg-gradient-to-r from-teal-500 to-cyan-600 px-4 py-2.5 text-sm font-semibold text-white shadow-md disabled:opacity-50"
                 >
                   <CheckCircle2 className="h-4 w-4" />
-                  {createAdmissionMutation.isPending ? 'Confirmando...' : 'Confirmar ingreso'}
+                  {createAdmissionMutation.isPending
+                    ? 'Confirmando...'
+                    : scheduledOrder
+                      ? admissionForm.requested_bed_id
+                        ? 'Reservar cama'
+                        : 'Registrar orden'
+                      : 'Confirmar ingreso'}
                 </button>
               </div>
               {createAdmissionMutation.isError && (
@@ -1174,7 +1260,17 @@ export default function AdmissionPanelPage() {
                           Ver internacion
                         </button>
                       )}
-                      {admission.status !== 'ADMINISTRATIVE_DISCHARGE' && (
+                      {isPendingScheduledOrder(admission) && (
+                        <button
+                          type="button"
+                          onClick={() => setCancelling(admission)}
+                          className="rounded-lg border border-red-200 px-3 py-1.5 text-xs font-semibold text-red-600 hover:bg-red-50"
+                        >
+                          Cancelar orden
+                        </button>
+                      )}
+                      {!['ADMINISTRATIVE_DISCHARGE', 'CANCELLED', 'REJECTED'].includes(admission.status) &&
+                        !isPendingScheduledOrder(admission) && (
                         <button
                           type="button"
                           onClick={() => dischargeMutation.mutate(admission.id)}
@@ -1191,6 +1287,15 @@ export default function AdmissionPanelPage() {
             </Card>
           </aside>
         </div>
+      )}
+
+      {cancelling && (
+        <CancelOrderModal
+          admissionId={cancelling.id}
+          hospitalizationId={cancelling.hospitalization_id}
+          patientName={`${cancelling.patient.first_name} ${cancelling.patient.last_name}`}
+          onClose={() => setCancelling(null)}
+        />
       )}
     </div>
   );

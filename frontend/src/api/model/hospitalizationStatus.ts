@@ -9,6 +9,7 @@ export type HospitalizationStatus = typeof HospitalizationStatus[keyof typeof Ho
 
 
 export const HospitalizationStatus = {
+  AWAITING_ARRIVAL: 'AWAITING_ARRIVAL',
   PENDING_BED: 'PENDING_BED',
   IN_PROGRESS: 'IN_PROGRESS',
   DISCHARGE_PLANNED: 'DISCHARGE_PLANNED',

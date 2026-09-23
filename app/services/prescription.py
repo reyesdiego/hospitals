@@ -18,6 +18,7 @@ from app.schemas.prescription import (
     DischargePrescriptionCreate,
     DischargePrescriptionUpdate,
 )
+from app.services.access import require_patient_arrived
 
 if TYPE_CHECKING:  # pragma: no cover - solo para la anotación del documento
     from app.services.prescription_pdf import PrescriptionDocument
@@ -148,6 +149,7 @@ class DischargePrescriptionService:
         """
 
         hospitalization = await self._require_hospitalization(hospitalization_id)
+        require_patient_arrived(hospitalization)
         if hospitalization.status not in EDITABLE_STATUSES:
             raise DomainError(
                 "La internación ya está cerrada: no admite cambios en las indicaciones",

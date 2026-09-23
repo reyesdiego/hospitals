@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { getDefault } from '@/api/endpoints/default/default';
@@ -5,7 +6,8 @@ import { getHospitalizationWorkflow } from '@/api/endpoints/hospitalization-work
 import { useAuth } from '@/auth/AuthContext';
 import AccountCard from '@/components/hospitalization/AccountCard';
 import AdmissionCard from '@/components/hospitalization/AdmissionCard';
-import { isPostDischarge } from '@/components/hospitalization/lock';
+import CancelOrderModal from '@/components/hospitalization/CancelOrderModal';
+import { isAwaitingArrival, isPostDischarge } from '@/components/hospitalization/lock';
 import BedManagementCard from '@/components/hospitalization/BedManagementCard';
 import CareTeamCard from '@/components/hospitalization/CareTeamCard';
 import ClinicalNotesCard from '@/components/hospitalization/ClinicalNotesCard';
@@ -19,7 +21,7 @@ import PracticesCard from '@/components/hospitalization/PracticesCard';
 import ServiceAssignmentsCard from '@/components/hospitalization/ServiceAssignmentsCard';
 import { Card, ErrorState, InfoRow, PageHeader, SectionTitle, Spinner } from '@/components/ui';
 import { formatDate } from '@/utils/format';
-import { ArrowLeft, FileText, Lock, User } from 'lucide-react';
+import { ArrowLeft, CalendarClock, FileText, Lock, User } from 'lucide-react';
 
 function ageAtDate(birthDate: string | null | undefined, referenceDate: string | null | undefined) {
   if (!birthDate || !referenceDate) return null;
@@ -41,6 +43,8 @@ export default function HospitalizationDetailPage() {
   const workflowApi = getHospitalizationWorkflow();
 
   const canManage = can('HOSPITALIZATION');
+  const canCancelOrder = can('ADMISSION');
+  const [cancelOpen, setCancelOpen] = useState(false);
   const isAdmin = user?.role === 'ADMIN';
 
   const hospitalizationQuery = useQuery({
@@ -49,6 +53,14 @@ export default function HospitalizationDetailPage() {
       workflowApi.getHospitalizationApiV1HospitalizationsHospitalizationIdGet(id ?? ''),
     enabled: Boolean(id),
     retry: false,
+  });
+  const awaitingArrival = hospitalizationQuery.data
+    ? isAwaitingArrival(hospitalizationQuery.data.status)
+    : false;
+  const admissionsQuery = useQuery({
+    queryKey: ['admissions', id],
+    queryFn: () => api.listAdmissionsApiV1AdmissionsGet({ hospitalization_id: id }),
+    enabled: Boolean(id) && awaitingArrival,
   });
   const patientsQuery = useQuery({
     queryKey: ['patients'],
@@ -81,6 +93,9 @@ export default function HospitalizationDetailPage() {
     ? `${patient.first_name} ${patient.last_name}`
     : 'Paciente desconocido';
   const patientAgeAtAdmission = ageAtDate(patient?.birth_date, hosp.admitted_at);
+  // Hasta que el paciente llega solo se gestiona la cama, el servicio y el equipo.
+  const canManageClinical = canManage && !awaitingArrival;
+  const admission = admissionsQuery.data?.[0];
 
   return (
     <div>
@@ -93,6 +108,30 @@ export default function HospitalizationDetailPage() {
       </button>
 
       <PageHeader title={patientName} subtitle={`Internacion #${hosp.id.slice(0, 8)}`} />
+
+      {awaitingArrival && (
+        <Card className="mb-6 flex items-start gap-3 border-sky-200 bg-sky-50 px-5 py-4">
+          <CalendarClock className="mt-0.5 h-5 w-5 shrink-0 text-sky-600" />
+          <div>
+            <p className="text-sm font-semibold text-sky-800">
+              Internacion programada: el paciente todavia no ingreso
+            </p>
+            <p className="mt-0.5 text-sm text-sky-700">
+              Solo tiene la cama reservada. Practicas, medicacion, notas, recetas y cargos se
+              habilitan cuando se confirma su ingreso en la cama.
+            </p>
+          </div>
+          {canCancelOrder && admission && (
+            <button
+              type="button"
+              onClick={() => setCancelOpen(true)}
+              className="ml-auto shrink-0 rounded-lg border border-red-200 bg-white px-3 py-1.5 text-xs font-semibold text-red-600 hover:bg-red-50"
+            >
+              Cancelar orden
+            </button>
+          )}
+        </Card>
+      )}
 
       {isPostDischarge(hosp.status) && (
         <Card className="mb-6 flex items-start gap-3 border-amber-200 bg-amber-50 px-5 py-4">
@@ -135,13 +174,13 @@ export default function HospitalizationDetailPage() {
           <LifecycleCard hosp={hosp} />
           <AdmissionCard hosp={hosp} />
           <BedManagementCard hosp={hosp} canManage={canManage} />
-          <PracticesCard hosp={hosp} canManage={canManage} />
-          <DiagnosesCard hosp={hosp} canManage={canManage} />
-          <TreatmentsCard hosp={hosp} canManage={canManage} />
-          <ClinicalNotesCard hosp={hosp} canManage={canManage} />
-          <AccountCard hosp={hosp} canManage={canManage} />
-          <DischargeCard hosp={hosp} canManage={canManage} />
-          <DischargePrescriptionsCard hosp={hosp} canManage={canManage} />
+          <PracticesCard hosp={hosp} canManage={canManageClinical} />
+          <DiagnosesCard hosp={hosp} canManage={canManageClinical} />
+          <TreatmentsCard hosp={hosp} canManage={canManageClinical} />
+          <ClinicalNotesCard hosp={hosp} canManage={canManageClinical} />
+          <AccountCard hosp={hosp} canManage={canManageClinical} />
+          <DischargeCard hosp={hosp} canManage={canManageClinical} />
+          <DischargePrescriptionsCard hosp={hosp} canManage={canManageClinical} />
         </div>
 
         <div className="space-y-6">
@@ -190,6 +229,15 @@ export default function HospitalizationDetailPage() {
           <EventsCard hospitalizationId={hosp.id} />
         </div>
       </div>
+
+      {cancelOpen && admission && (
+        <CancelOrderModal
+          admissionId={admission.id}
+          hospitalizationId={hosp.id}
+          patientName={patientName}
+          onClose={() => setCancelOpen(false)}
+        />
+      )}
     </div>
   );
 }

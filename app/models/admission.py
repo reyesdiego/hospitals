@@ -130,8 +130,9 @@ class Admission(UUIDMixin, TimestampMixin, Base):
     )
     # Cache of the granted admission authorization number; ``authorizations`` is the source of truth.
     authorization_number: Mapped[str | None] = mapped_column(String(100))
-    responsible_contact_name: Mapped[str] = mapped_column(String(150))
-    responsible_contact_phone: Mapped[str] = mapped_column(String(80))
+    # Vacíos en la orden médica programada hasta que el paciente se presenta.
+    responsible_contact_name: Mapped[str | None] = mapped_column(String(150))
+    responsible_contact_phone: Mapped[str | None] = mapped_column(String(80))
     responsible_contact_relationship: Mapped[str | None] = mapped_column(String(80))
     admission_reason: Mapped[str] = mapped_column(String(500))
     responsible_physician: Mapped[str] = mapped_column(String(150))

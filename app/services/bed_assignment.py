@@ -23,6 +23,8 @@ from app.models.hospitalization import (
     Hospitalization,
     HospitalizationStatus,
 )
+from app.schemas.domain import AdmissionArrivalCreate
+from app.services.admission_arrival import record_arrival
 from app.services.audit import record_event
 from app.services.bed_status import apply_bed_status
 from app.services.service_assignment import reassign_service
@@ -42,12 +44,14 @@ class BedAssignmentService:
         commit: bool = True,
         assignment_reason: str | None = None,
         assigned_by: str | None = None,
+        arrival: AdmissionArrivalCreate | None = None,
     ) -> BedAssignment:
         """Confirm the physical admission of the patient on a bed.
 
-        Completes the reservation if the bed was held for this hospitalization, moves the
-        bed to OCCUPIED and starts the hospitalization. Atomic when ``commit`` is true;
-        otherwise it joins the transaction owned by the caller.
+        Completes the reservation if the bed was held for this hospitalization, records the
+        contact and consents taken on arrival, moves the bed to OCCUPIED and starts the
+        hospitalization. Atomic when ``commit`` is true; otherwise it joins the transaction
+        owned by the caller.
         """
 
         if not commit:
@@ -56,6 +60,7 @@ class BedAssignmentService:
                 bed_id,
                 assignment_reason=assignment_reason,
                 assigned_by=assigned_by,
+                arrival=arrival,
             )
 
         async with integrity_conflict(
@@ -67,6 +72,7 @@ class BedAssignmentService:
                 bed_id,
                 assignment_reason=assignment_reason,
                 assigned_by=assigned_by,
+                arrival=arrival,
             )
 
     async def transfer(
@@ -253,6 +259,7 @@ class BedAssignmentService:
         bed_id: uuid.UUID,
         assignment_reason: str | None = None,
         assigned_by: str | None = None,
+        arrival: AdmissionArrivalCreate | None = None,
     ) -> BedAssignment:
         hospitalization = await self._hospitalization_for_update(hospitalization_id)
         self._validate_hospitalization_active(hospitalization)
@@ -300,7 +307,12 @@ class BedAssignmentService:
         hospitalization.admitted_at = hospitalization.admitted_at or now
         if hospitalization.facility_id is None:
             hospitalization.facility_id = bed.facility_id
-        await self._mark_admission_admitted(hospitalization_id, hospitalization.admitted_at)
+        await self._mark_admission_admitted(
+            hospitalization_id,
+            hospitalization.admitted_at,
+            arrival=arrival,
+            at=now,
+        )
         self.session.add(assignment)
         record_event(
             self.session,
@@ -350,12 +362,16 @@ class BedAssignmentService:
         self,
         hospitalization_id: uuid.UUID,
         admitted_at: datetime,
+        *,
+        arrival: AdmissionArrivalCreate | None,
+        at: datetime,
     ) -> None:
         admission = await self.session.scalar(
             select(Admission).where(Admission.hospitalization_id == hospitalization_id)
         )
         if not admission:
             return
+        record_arrival(self.session, admission, arrival, at)
         if admission.status in {
             AdmissionStatus.ADMINISTRATIVE_DISCHARGE,
             AdmissionStatus.CANCELLED,

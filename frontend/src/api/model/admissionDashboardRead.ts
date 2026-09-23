@@ -29,8 +29,8 @@ export interface AdmissionDashboardRead {
   duplicate_checked: boolean;
   authorization_status: AuthorizationStatus;
   authorization_number: string | null;
-  responsible_contact_name: string;
-  responsible_contact_phone: string;
+  responsible_contact_name: string | null;
+  responsible_contact_phone: string | null;
   responsible_contact_relationship: string | null;
   admission_reason: string;
   responsible_physician: string;

@@ -37,6 +37,7 @@ from app.models.room import Room
 from app.models.service import Service
 from app.schemas.domain import (
     AdministrativeDischargeCreate,
+    AdmissionCancelCreate,
     AdmissionConsentRead,
     AdmissionCreate,
     AdmissionDashboardRead,
@@ -595,6 +596,17 @@ async def create_admission(payload: AdmissionCreate, session: DbSession):
     return await AdmissionWorkflowService(session).create(payload)
 
 
+@router.post("/admissions/{admission_id}/cancel", response_model=AdmissionRead)
+async def cancel_admission(
+    admission_id: uuid.UUID,
+    payload: AdmissionCancelCreate,
+    session: DbSession,
+):
+    """Baja de una orden médica programada cuyo paciente nunca llegó: libera la cama."""
+
+    return await AdmissionWorkflowService(session).cancel(admission_id, payload)
+
+
 @router.post("/admissions/{admission_id}/administrative-discharge", response_model=AdmissionRead)
 async def administrative_discharge(
     admission_id: uuid.UUID,
@@ -619,6 +631,7 @@ async def assign_bed(
         payload.bed_id,
         assignment_reason=payload.assignment_reason,
         assigned_by=payload.assigned_by,
+        arrival=payload.arrival,
     )
 
 

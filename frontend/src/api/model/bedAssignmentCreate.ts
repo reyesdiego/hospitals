@@ -4,9 +4,11 @@
  * Hospital Internment API
  * OpenAPI spec version: 0.1.0
  */
+import type { AdmissionArrivalCreate } from './admissionArrivalCreate';
 
 export interface BedAssignmentCreate {
   bed_id: string;
   assignment_reason?: string | null;
   assigned_by?: string | null;
+  arrival?: AdmissionArrivalCreate | null;
 }

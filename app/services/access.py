@@ -1,5 +1,9 @@
 """Qué se puede tocar de una internación según en qué punto de su vida está.
 
+Antes de que el paciente llegue —orden médica programada con la cama reservada— no hay a
+quién indicarle nada: la internación no admite nada clínico, cargos, ni cambios de servicio
+o de equipo, tampoco de un administrador. Solo se gestiona la cama y la orden.
+
 Con el alta médica dada, la internación deja de recibir cambios: lo que se cargue después
 no lo vio el médico que firmó el alta. Un administrador puede hacerlo igual —hay errores que
 aparecen después, y un resultado de laboratorio que llega tarde hay que poder cargarlo— pero
@@ -22,6 +26,15 @@ POST_DISCHARGE_STATUSES = {
 }
 
 
+def require_patient_arrived(hospitalization: Hospitalization) -> None:
+    if hospitalization.status == HospitalizationStatus.AWAITING_ARRIVAL:
+        raise DomainError(
+            "El paciente todavía no ingresó: la internación está programada y solo tiene la "
+            "cama reservada. Se habilita cuando se confirma su ingreso en la cama",
+            409,
+        )
+
+
 def require_editable(
     session: AsyncSession,
     hospitalization: Hospitalization,
@@ -32,6 +45,7 @@ def require_editable(
     """Dentro de la transacción del llamador: corta si no corresponde, y si un administrador
     pasa por encima del alta médica, lo registra."""
 
+    require_patient_arrived(hospitalization)
     if hospitalization.status not in POST_DISCHARGE_STATUSES:
         return
     if not user.is_admin:

@@ -1,7 +1,7 @@
 """Admission, discharge and account lifecycle against PostgreSQL."""
 
 import uuid
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 
 import pytest
 from sqlalchemy import select
@@ -10,18 +10,33 @@ from app.core.exceptions import DomainError
 from app.models.account import Account, AccountStatus, PaymentMethod
 from app.models.admission import (
     Admission,
+    AdmissionConsent,
+    AdmissionOrigin,
     AdmissionStatus,
+    AdmissionType,
     AuthorizationStatus,
+    ConsentType,
     Episode,
     EpisodeStatus,
 )
 from app.models.audit import HospitalizationEvent, HospitalizationEventType
 from app.models.authorization import Authorization, AuthorizationState
-from app.models.bed import Bed, BedAssignment, BedStatus
+from app.models.bed import (
+    Bed,
+    BedAssignment,
+    BedReservation,
+    BedReservationStatus,
+    BedStatus,
+)
 from app.models.care_team import CareTeamRole
 from app.models.discharge import DischargePlanStatus
 from app.models.hospitalization import Hospitalization, HospitalizationStatus
-from app.schemas.domain import AdministrativeDischargeCreate, HospitalizationCreate
+from app.schemas.domain import (
+    AdministrativeDischargeCreate,
+    AdmissionArrivalCreate,
+    AdmissionConsentCreate,
+    HospitalizationCreate,
+)
 from app.schemas.workflow import (
     AuthorizationRequestCreate,
     AuthorizationResolveCreate,
@@ -197,6 +212,142 @@ def test_admission_request_requires_identity_validation():
             return error.value.status_code
 
     assert run_db(case) == 422
+
+
+def test_admission_request_requires_the_responsible_contact():
+    async def case(factory):
+        async with factory() as setup:
+            scenario = await build_scenario(setup)
+        async with factory() as session:
+            with pytest.raises(DomainError) as error:
+                await AdmissionWorkflowService(session).create(
+                    admission_payload(
+                        scenario,
+                        responsible_contact_name="  ",
+                        responsible_contact_phone=None,
+                    )
+                )
+            return error.value.status_code
+
+    assert run_db(case) == 422
+
+
+def test_scheduled_medical_order_reserves_the_bed_without_contact():
+    """El paciente viene después: la cama queda reservada, no ocupada."""
+
+    async def case(factory):
+        async with factory() as setup:
+            scenario = await build_scenario(setup)
+        async with factory() as session:
+            admission = await AdmissionWorkflowService(session).create(
+                admission_payload(
+                    scenario,
+                    origin=AdmissionOrigin.SCHEDULED_MEDICAL_ORDER,
+                    admission_type=AdmissionType.SCHEDULED,
+                    responsible_contact_name=None,
+                    responsible_contact_phone=None,
+                    requested_bed_id=scenario.bed_ids[0],
+                    bed_reservation_expires_in_minutes=2880,
+                    confirm_admission=True,
+                )
+            )
+            admission_id = admission.id
+        async with factory() as check:
+            admission = await check.get(Admission, admission_id)
+            hospitalization = await check.get(Hospitalization, admission.hospitalization_id)
+            bed = await check.get(Bed, scenario.bed_ids[0])
+            reservation = await check.scalar(
+                select(BedReservation).where(
+                    BedReservation.hospitalization_id == hospitalization.id
+                )
+            )
+            assignments = (
+                await check.scalars(
+                    select(BedAssignment).where(
+                        BedAssignment.hospitalization_id == hospitalization.id
+                    )
+                )
+            ).all()
+            hospitalization_id = hospitalization.id
+            result = (
+                admission.status,
+                admission.responsible_contact_name,
+                hospitalization.status,
+                bed.status,
+                reservation.status,
+                reservation.expires_at - reservation.reserved_at,
+                len(assignments),
+            )
+        # Sin contacto no se lo interna: es lo que la orden dejó pendiente.
+        async with factory() as session:
+            with pytest.raises(DomainError) as error:
+                await BedAssignmentService(session).assign(
+                    hospitalization_id, scenario.bed_ids[0]
+                )
+            missing_contact_status = error.value.status_code
+        # Cuando el paciente llega, confirmar la reserva toma el contacto y los
+        # consentimientos y lo interna en esa cama.
+        async with factory() as session:
+            await BedAssignmentService(session).assign(
+                hospitalization_id,
+                scenario.bed_ids[0],
+                arrival=AdmissionArrivalCreate(
+                    responsible_contact_name=" Ana Perez ",
+                    responsible_contact_phone="11-4444-4444",
+                    responsible_contact_relationship="Hija",
+                    consents=[
+                        AdmissionConsentCreate(
+                            consent_type=ConsentType.GENERAL_ADMISSION, signed_by="Ana Perez"
+                        )
+                    ],
+                ),
+            )
+        async with factory() as check:
+            reservation = await check.scalar(
+                select(BedReservation).where(
+                    BedReservation.hospitalization_id == hospitalization_id
+                )
+            )
+            bed = await check.get(Bed, scenario.bed_ids[0])
+            admission = await check.get(Admission, admission_id)
+            consents = (
+                await check.scalars(
+                    select(AdmissionConsent.consent_type).where(
+                        AdmissionConsent.admission_id == admission_id
+                    )
+                )
+            ).all()
+            arrival = (
+                missing_contact_status,
+                reservation.status,
+                bed.status,
+                admission.status,
+                admission.responsible_contact_name,
+                admission.responsible_contact_relationship,
+                list(consents),
+            )
+            return result, arrival
+
+    result, arrival = run_db(case)
+
+    assert result == (
+        AdmissionStatus.PENDING_BED,
+        None,
+        HospitalizationStatus.AWAITING_ARRIVAL,
+        BedStatus.RESERVED,
+        BedReservationStatus.ACTIVE,
+        timedelta(minutes=2880),
+        0,
+    )
+    assert arrival == (
+        422,
+        BedReservationStatus.COMPLETED,
+        BedStatus.OCCUPIED,
+        AdmissionStatus.ADMITTED,
+        "Ana Perez",
+        "Hija",
+        [ConsentType.GENERAL_ADMISSION],
+    )
 
 
 def test_authorization_decision_moves_the_admission_request():

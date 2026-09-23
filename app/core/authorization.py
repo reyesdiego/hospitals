@@ -25,6 +25,7 @@ WRITE_PERMISSIONS: dict[tuple[str, str], Permission] = {
     ("POST", "/admissions/{admission_id}/authorizations"): Permission.ADMISSION,
     ("POST", "/authorizations/{authorization_id}/resolve"): Permission.ADMISSION,
     ("POST", "/admissions/{admission_id}/administrative-discharge"): Permission.ADMISSION,
+    ("POST", "/admissions/{admission_id}/cancel"): Permission.ADMISSION,
     # Consulta al financiador: no modifica datos, pero va por POST porque lleva cuerpo.
     ("POST", "/payer-mock/authorizations"): Permission.ADMISSION,
     ("POST", "/hospitalizations"): Permission.ADMISSION,

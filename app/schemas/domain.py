@@ -149,6 +149,9 @@ class BedAssignmentCreate(BaseModel):
     bed_id:uuid.UUID
     assignment_reason:str|None=Field(default=None,max_length=500)
     assigned_by:str|None=Field(default=None,max_length=150)
+    #: Lo que se toma cuando el paciente se presenta: hace falta si la admisión se registró
+    #: sin contacto (orden médica programada).
+    arrival:"AdmissionArrivalCreate|None"=None
 class BedStatusCreate(BaseModel):
     status: BedStatus
     changed_by: str | None = Field(default=None, max_length=150)
@@ -250,6 +253,18 @@ class AdmissionConsentRead(ORMModel):
     created_at: datetime
 
 
+class AdmissionArrivalCreate(BaseModel):
+    """Contacto y consentimientos que se toman cuando el paciente llega a internarse."""
+
+    responsible_contact_name: str | None = Field(default=None, max_length=150)
+    responsible_contact_phone: str | None = Field(default=None, max_length=80)
+    responsible_contact_relationship: str | None = Field(default=None, max_length=80)
+    consents: list[AdmissionConsentCreate] = Field(default_factory=list)
+
+
+BedAssignmentCreate.model_rebuild()
+
+
 class AdmissionCreate(BaseModel):
     patient_id: uuid.UUID
     origin: AdmissionOrigin
@@ -261,8 +276,10 @@ class AdmissionCreate(BaseModel):
     coverage: PatientCoverageCreate | None = None
     authorization_status: AuthorizationStatus = AuthorizationStatus.NOT_REQUIRED
     authorization_number: str | None = Field(default=None, max_length=100)
-    responsible_contact_name: str = Field(min_length=1, max_length=150)
-    responsible_contact_phone: str = Field(min_length=1, max_length=80)
+    #: Obligatorio salvo en la orden médica programada: ahí el paciente todavía no llegó
+    #: y el contacto se toma cuando se presenta a internarse.
+    responsible_contact_name: str | None = Field(default=None, max_length=150)
+    responsible_contact_phone: str | None = Field(default=None, max_length=80)
     responsible_contact_relationship: str | None = Field(default=None, max_length=80)
     admission_reason: str = Field(min_length=3, max_length=500)
     responsible_physician: str = Field(min_length=1, max_length=150)
@@ -273,6 +290,9 @@ class AdmissionCreate(BaseModel):
     #: relato del cuadro; estos son los que van a la estadística.
     diagnoses: list[HospitalizationDiagnosisCreate] = Field(default_factory=list, max_length=20)
     requested_bed_id: uuid.UUID | None = None
+    #: Cuánto se sostiene la cama de una orden médica programada hasta que el paciente
+    #: llega. Sin vencimiento, una reserva olvidada tendría la cama tomada para siempre.
+    bed_reservation_expires_in_minutes: int = Field(default=1440, ge=1, le=10080)
     consents: list[AdmissionConsentCreate] = Field(default_factory=list)
     notes: str | None = None
     confirm_admission: bool = True
@@ -294,8 +314,8 @@ class AdmissionRead(ORMModel):
     duplicate_checked: bool
     authorization_status: AuthorizationStatus
     authorization_number: str | None
-    responsible_contact_name: str
-    responsible_contact_phone: str
+    responsible_contact_name: str | None
+    responsible_contact_phone: str | None
     responsible_contact_relationship: str | None
     admission_reason: str
     responsible_physician: str
@@ -313,6 +333,13 @@ class AdmissionDashboardRead(AdmissionRead):
     episode: EpisodeRead | None = None
     coverage: PatientCoverageRead | None = None
     consents: list[AdmissionConsentRead] = Field(default_factory=list)
+
+
+class AdmissionCancelCreate(BaseModel):
+    """Por qué no se va a internar: el paciente no vino, se reprogramó, desistió…"""
+
+    reason: str = Field(min_length=3, max_length=500)
+    cancelled_by: str | None = Field(default=None, max_length=150)
 
 
 class AdministrativeDischargeCreate(BaseModel):

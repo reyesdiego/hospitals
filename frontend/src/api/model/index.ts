@@ -13,6 +13,8 @@ export * from './administrationRead';
 export * from './administrationStatus';
 export * from './administrationVoidCreate';
 export * from './administrativeDischargeCreate';
+export * from './admissionArrivalCreate';
+export * from './admissionCancelCreate';
 export * from './admissionConsentCreate';
 export * from './admissionConsentRead';
 export * from './admissionCreate';

@@ -10,6 +10,9 @@ from app.models.base import Base, TimestampMixin, UUIDMixin
 
 
 class HospitalizationStatus(str, enum.Enum):
+    #: Orden médica programada: la cama puede estar reservada, pero el paciente todavía no
+    #: llegó. No admite nada clínico hasta que se lo interna en la cama.
+    AWAITING_ARRIVAL = "AWAITING_ARRIVAL"
     PENDING_BED = "PENDING_BED"
     IN_PROGRESS = "IN_PROGRESS"
     DISCHARGE_PLANNED = "DISCHARGE_PLANNED"
@@ -21,6 +24,7 @@ class HospitalizationStatus(str, enum.Enum):
 
 #: Statuses where the patient is still under the responsibility of the hospital.
 OPEN_HOSPITALIZATION_STATUSES = {
+    HospitalizationStatus.AWAITING_ARRIVAL,
     HospitalizationStatus.PENDING_BED,
     HospitalizationStatus.IN_PROGRESS,
     HospitalizationStatus.DISCHARGE_PLANNED,
