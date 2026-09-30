@@ -7,6 +7,7 @@ from app.core.users import RequestUser
 from app.models.diagnosis import DiagnosisCode, DiagnosisLevel, DiagnosisRole, DiagnosisStage
 from app.schemas.diagnosis import (
     HospitalizationDiagnosisCreate,
+    HospitalizationDiagnosisRead,
     HospitalizationDiagnosisUpdate,
 )
 from app.schemas.workflow import ClinicalDischargeCreate
@@ -66,7 +67,10 @@ def test_the_admission_records_the_presumptive_diagnoses():
             entries = await HospitalizationDiagnosisService(check).list_for_hospitalization(
                 hospitalization_id
             )
-            return [(entry.code, entry.role, entry.stage, entry.description) for entry in entries]
+            return [
+                (entry.code, entry.role, entry.stage, entry.description, entry.diagnosed_by_name)
+                for entry in entries
+            ]
 
     entries = run_db(case)
 
@@ -75,6 +79,8 @@ def test_the_admission_records_the_presumptive_diagnoses():
     assert entries[1][:3] == ("E11", DiagnosisRole.COMORBIDITY, DiagnosisStage.ADMISSION)
     # El texto queda congelado del catálogo.
     assert entries[0][3] == "Neumonía bacteriana, no especificada"
+    # Sin decir otro, los de ingreso los indica el médico responsable de la admisión.
+    assert [entry[4] for entry in entries] == ["Diaz, Marta", "Diaz, Marta"]
 
 
 def test_only_a_codifiable_and_active_code_can_be_recorded():
@@ -89,12 +95,18 @@ def test_only_a_codifiable_and_active_code_can_be_recorded():
             with pytest.raises(DomainError) as chapter:
                 await service.add(
                     hospitalization_id,
-                    HospitalizationDiagnosisCreate(code="J00-J99"),
+                    HospitalizationDiagnosisCreate(
+                        diagnosed_by_id=scenario.practitioner_id,
+                        code="J00-J99",
+                    ),
                 )
             with pytest.raises(DomainError) as unknown:
                 await service.add(
                     hospitalization_id,
-                    HospitalizationDiagnosisCreate(code="Z999"),
+                    HospitalizationDiagnosisCreate(
+                        diagnosed_by_id=scenario.practitioner_id,
+                        code="Z999",
+                    ),
                 )
             return chapter.value.status_code, unknown.value.status_code
 
@@ -112,17 +124,26 @@ def test_there_is_only_one_principal_diagnosis_per_stage():
             service = HospitalizationDiagnosisService(session)
             await service.add(
                 hospitalization_id,
-                HospitalizationDiagnosisCreate(code="J159", role=DiagnosisRole.PRINCIPAL),
+                HospitalizationDiagnosisCreate(
+                    diagnosed_by_id=scenario.practitioner_id,
+                    code="J159",
+                    role=DiagnosisRole.PRINCIPAL,
+                ),
             )
             with pytest.raises(DomainError) as error:
                 await service.add(
                     hospitalization_id,
-                    HospitalizationDiagnosisCreate(code="I10", role=DiagnosisRole.PRINCIPAL),
+                    HospitalizationDiagnosisCreate(
+                        diagnosed_by_id=scenario.practitioner_id,
+                        code="I10",
+                        role=DiagnosisRole.PRINCIPAL,
+                    ),
                 )
             # El mismo código en el egreso sí: es otro momento de la internación.
             await service.add(
                 hospitalization_id,
                 HospitalizationDiagnosisCreate(
+                    diagnosed_by_id=scenario.practitioner_id,
                     code="J159",
                     role=DiagnosisRole.PRINCIPAL,
                     stage=DiagnosisStage.DISCHARGE,
@@ -153,17 +174,20 @@ def test_the_clinical_discharge_records_the_final_diagnoses():
         async with factory() as session:
             await HospitalizationDiagnosisService(session).add(
                 hospitalization_id,
-                HospitalizationDiagnosisCreate(code="J159", role=DiagnosisRole.PRINCIPAL),
+                HospitalizationDiagnosisCreate(
+                    diagnosed_by_id=scenario.practitioner_id,
+                    code="J159",
+                    role=DiagnosisRole.PRINCIPAL,
+                ),
             )
         async with factory() as session:
             await HospitalizationService(session).clinical_discharge(
                 hospitalization_id,
+                # Los de egreso, sin decir otro, los indica el médico que da el alta.
                 ClinicalDischargeCreate(
+                    ordered_by_practitioner_id=scenario.practitioner_id,
                     diagnoses=[
-                        HospitalizationDiagnosisCreate(
-                            code="J15",
-                            role=DiagnosisRole.PRINCIPAL,
-                        ),
+                        HospitalizationDiagnosisCreate(code="J15", role=DiagnosisRole.PRINCIPAL),
                         HospitalizationDiagnosisCreate(code="I10"),
                     ],
                 ),
@@ -207,13 +231,20 @@ def test_after_the_medical_discharge_only_an_admin_touches_the_diagnoses():
             with pytest.raises(DomainError) as error:
                 await HospitalizationDiagnosisService(session, NURSE).add(
                     hospitalization_id,
-                    HospitalizationDiagnosisCreate(code="J159"),
+                    HospitalizationDiagnosisCreate(
+                        diagnosed_by_id=scenario.practitioner_id,
+                        code="J159",
+                    ),
                 )
             status_code = error.value.status_code
         async with factory() as session:
             entry = await HospitalizationDiagnosisService(session, ADMIN).add(
                 hospitalization_id,
-                HospitalizationDiagnosisCreate(code="J159", stage=DiagnosisStage.DISCHARGE),
+                HospitalizationDiagnosisCreate(
+                    diagnosed_by_id=scenario.practitioner_id,
+                    code="J159",
+                    stage=DiagnosisStage.DISCHARGE,
+                ),
             )
             return status_code, entry.code
 
@@ -234,11 +265,18 @@ def test_a_diagnosis_can_be_re_roled_and_removed():
             service = HospitalizationDiagnosisService(session)
             first = await service.add(
                 hospitalization_id,
-                HospitalizationDiagnosisCreate(code="J159", role=DiagnosisRole.PRINCIPAL),
+                HospitalizationDiagnosisCreate(
+                    diagnosed_by_id=scenario.practitioner_id,
+                    code="J159",
+                    role=DiagnosisRole.PRINCIPAL,
+                ),
             )
             second = await service.add(
                 hospitalization_id,
-                HospitalizationDiagnosisCreate(code="I10"),
+                HospitalizationDiagnosisCreate(
+                    diagnosed_by_id=scenario.practitioner_id,
+                    code="I10",
+                ),
             )
             first_id, second_id = first.id, second.id
         async with factory() as session:
@@ -247,15 +285,48 @@ def test_a_diagnosis_can_be_re_roled_and_removed():
             await service.update(
                 hospitalization_id,
                 first_id,
-                HospitalizationDiagnosisUpdate(role=DiagnosisRole.SECONDARY),
+                HospitalizationDiagnosisUpdate(
+                    diagnosed_by_id=scenario.practitioner_id,
+                    role=DiagnosisRole.SECONDARY,
+                ),
             )
             await service.update(
                 hospitalization_id,
                 second_id,
-                HospitalizationDiagnosisUpdate(role=DiagnosisRole.PRINCIPAL),
+                HospitalizationDiagnosisUpdate(
+                    diagnosed_by_id=scenario.practitioner_id,
+                    role=DiagnosisRole.PRINCIPAL,
+                ),
             )
             await service.remove(hospitalization_id, first_id)
             entries = await service.list_for_hospitalization(hospitalization_id)
             return [(entry.code, entry.role) for entry in entries]
 
     assert run_db(case) == [("I10", DiagnosisRole.PRINCIPAL)]
+
+
+def test_every_diagnosis_says_which_professional_made_it():
+    async def case(factory):
+        async with factory() as setup:
+            scenario = await build_scenario(setup)
+            await load_codes(setup)
+        async with factory() as session:
+            hospitalization_id = await hospitalization_from_admission(session, scenario)
+        async with factory() as session:
+            with pytest.raises(DomainError) as error:
+                await HospitalizationDiagnosisService(session).add(
+                    hospitalization_id, HospitalizationDiagnosisCreate(code="J159")
+                )
+            missing = error.value.status_code
+        async with factory() as session:
+            entry = await HospitalizationDiagnosisService(session).add(
+                hospitalization_id,
+                HospitalizationDiagnosisCreate(
+                    code="J159", diagnosed_by_id=scenario.practitioner_id
+                ),
+            )
+            # Lo que devuelve la API al asentarlo ya dice quién lo indicó.
+            answered = HospitalizationDiagnosisRead.model_validate(entry).diagnosed_by_name
+        return missing, answered
+
+    assert run_db(case) == (422, "Diaz, Marta")

@@ -164,7 +164,10 @@ class _Sheet:
 
 def _diagnosis_line(entry: HospitalizationDiagnosis) -> str:
     role = ROLE_LABELS.get(entry.role.value, entry.role.value.lower())
-    return f"{entry.code} - {entry.description} ({role})"
+    line = f"{entry.code} - {entry.description} ({role})"
+    if entry.diagnosed_by_name:
+        line = f"{line} - indicado por {entry.diagnosed_by_name}"
+    return line
 
 
 def _treatment_line(line: TreatmentLine) -> str:

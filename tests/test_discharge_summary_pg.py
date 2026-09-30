@@ -53,7 +53,11 @@ async def discharged_stay(factory, scenario):
     async with factory() as session:
         await HospitalizationDiagnosisService(session).add(
             hospitalization_id,
-            HospitalizationDiagnosisCreate(code="J159", role=DiagnosisRole.PRINCIPAL),
+            HospitalizationDiagnosisCreate(
+                diagnosed_by_id=scenario.practitioner_id,
+                code="J159",
+                role=DiagnosisRole.PRINCIPAL,
+            ),
         )
     async with factory() as session:
         treatment = await HospitalizationTreatmentService(session).add(
@@ -121,8 +125,13 @@ async def discharged_stay(factory, scenario):
                 ordered_by_practitioner_id=scenario.practitioner_id,
                 instructions="Control en 7 dias",
                 diagnoses=[
-                    HospitalizationDiagnosisCreate(code="J15", role=DiagnosisRole.PRINCIPAL),
                     HospitalizationDiagnosisCreate(
+                        diagnosed_by_id=scenario.practitioner_id,
+                        code="J15",
+                        role=DiagnosisRole.PRINCIPAL,
+                    ),
+                    HospitalizationDiagnosisCreate(
+                        diagnosed_by_id=scenario.practitioner_id,
                         code="I10",
                         role=DiagnosisRole.COMORBIDITY,
                     ),
@@ -186,6 +195,7 @@ def test_without_the_medical_discharge_the_summary_is_a_draft():
             await HospitalizationDiagnosisService(session).add(
                 hospitalization_id,
                 HospitalizationDiagnosisCreate(
+                    diagnosed_by_id=scenario.practitioner_id,
                     code="J159",
                     role=DiagnosisRole.PRINCIPAL,
                     stage=DiagnosisStage.ADMISSION,

@@ -12,6 +12,7 @@ import { invalidateHospitalization } from '@/api/queryKeys';
 import { useAuth } from '@/auth/AuthContext';
 import { isPostDischarge } from './lock';
 import DiagnosisPicker from '@/components/diagnoses/DiagnosisPicker';
+import ProfessionalPicker from '@/components/professionals/ProfessionalPicker';
 import {
   ActionButton,
   Badge,
@@ -47,6 +48,8 @@ export function DiagnosesCard({
   const [picked, setPicked] = useState<DiagnosisCodeRead | null>(null);
   const [role, setRole] = useState<DiagnosisRole>('SECONDARY');
   const [notes, setNotes] = useState('');
+  /** Quien lo indico: se exige, y se conserva entre diagnosticos porque suele ser el mismo. */
+  const [diagnosedById, setDiagnosedById] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [printing, setPrinting] = useState(false);
 
@@ -68,6 +71,7 @@ export function DiagnosesCard({
         code: picked!.code,
         role,
         stage,
+        diagnosed_by_id: diagnosedById,
         notes: notes.trim() || null,
       }),
     onSuccess: () => {
@@ -154,9 +158,17 @@ export function DiagnosesCard({
                           </span>
                           {entry.description}
                         </p>
+                        <p className="text-xs text-slate-500">
+                          Indicado por{' '}
+                          <span className="font-semibold text-slate-600">
+                            {entry.diagnosed_by_name ?? 'profesional sin registrar'}
+                          </span>
+                        </p>
                         <p className="text-xs text-slate-400">
                           {formatDateTime(entry.diagnosed_at)}
-                          {entry.recorded_by_user_name ? ` · ${entry.recorded_by_user_name}` : ''}
+                          {entry.recorded_by_user_name
+                            ? ` · cargado por ${entry.recorded_by_user_name}`
+                            : ''}
                           {entry.notes ? ` · ${entry.notes}` : ''}
                         </p>
                       </div>
@@ -205,6 +217,14 @@ export function DiagnosesCard({
             <DiagnosisPicker onSelect={setPicked} />
           )}
 
+          <Field label="Profesional que lo indica">
+            <ProfessionalPicker
+              value={diagnosedById}
+              onSelect={setDiagnosedById}
+              emptyLabel="Elegir profesional"
+            />
+          </Field>
+
           <div className="grid gap-3 sm:grid-cols-3">
             <Field label="Momento">
               <select
@@ -246,7 +266,7 @@ export function DiagnosesCard({
           <div className="flex justify-end">
             <ActionButton
               tone="teal"
-              disabled={!picked || addMutation.isPending}
+              disabled={!picked || !diagnosedById || addMutation.isPending}
               onClick={() => addMutation.mutate()}
             >
               <Plus className="h-4 w-4" />

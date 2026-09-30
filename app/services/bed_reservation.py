@@ -17,6 +17,7 @@ from app.models.bed import (
 )
 from app.models.hospitalization import OPEN_HOSPITALIZATION_STATUSES, Hospitalization
 from app.services.audit import record_event
+from app.services.bed_assignment import move_to_bed_facility
 from app.services.bed_status import apply_bed_status
 
 
@@ -89,6 +90,7 @@ class BedReservationService:
             reason=reason,
         )
         self.session.add(reservation)
+        await move_to_bed_facility(self.session, hospitalization, bed)
         apply_bed_status(
             self.session,
             bed,

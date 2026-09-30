@@ -15,6 +15,7 @@ import type {
   PayerAuthorizationRead,
 } from '@/api/model';
 import { Badge, Card, EmptyState, ErrorState, PageHeader, Spinner } from '@/components/ui';
+import AvailableBedSelect from '@/components/beds/AvailableBedSelect';
 import DiagnosisPicker from '@/components/diagnoses/DiagnosisPicker';
 import CancelOrderModal from '@/components/hospitalization/CancelOrderModal';
 import ProfessionalPicker from '@/components/professionals/ProfessionalPicker';
@@ -156,10 +157,6 @@ export default function AdmissionPanelPage() {
     queryKey: ['services'],
     queryFn: () => api.listServicesApiV1ServicesGet(),
   });
-  const bedsQuery = useQuery({
-    queryKey: ['beds'],
-    queryFn: () => api.listBedsApiV1BedsGet(),
-  });
   const admissionsQuery = useQuery({
     queryKey: ['admissions'],
     queryFn: () => api.listAdmissionsApiV1AdmissionsGet(),
@@ -202,6 +199,7 @@ export default function AdmissionPanelPage() {
       queryClient.invalidateQueries({ queryKey: ['admissions'] });
       queryClient.invalidateQueries({ queryKey: ['hospitalizations'] });
       queryClient.invalidateQueries({ queryKey: ['beds'] });
+      queryClient.invalidateQueries({ queryKey: ['beds-available'] });
       setAdmissionForm(initialAdmission);
       setSignedConsents({ GENERAL_ADMISSION: false, DATA_PROCESSING: false, PROCEDURE: false });
       setCoverageChoice('NONE');
@@ -230,10 +228,8 @@ export default function AdmissionPanelPage() {
   });
 
   const patients = patientsQuery.data ?? [];
-  const beds = bedsQuery.data ?? [];
   const services = servicesQuery.data ?? [];
   const admissions = admissionsQuery.data ?? [];
-  const availableBeds = beds.filter((bed) => bed.status === 'AVAILABLE');
 
   const filteredPatients = useMemo(() => {
     const q = search.trim().toLowerCase();
@@ -434,13 +430,11 @@ export default function AdmissionPanelPage() {
   const loading =
     patientsQuery.isLoading ||
     servicesQuery.isLoading ||
-    bedsQuery.isLoading ||
     admissionsQuery.isLoading ||
     professionalsQuery.isLoading;
   const error =
     patientsQuery.isError ||
     servicesQuery.isError ||
-    bedsQuery.isError ||
     admissionsQuery.isError ||
     professionalsQuery.isError;
 
@@ -979,7 +973,11 @@ export default function AdmissionPanelPage() {
                 </p>
                 <p className="mb-3 text-xs text-slate-500">
                   Son presuntivos: el diagnostico definitivo lo asienta el medico con el alta.
-                  El primero que se agrega queda como principal.
+                  El primero que se agrega queda como principal. Quedan indicados por{' '}
+                  <span className="font-semibold text-slate-600">
+                    {admissionForm.responsible_physician || 'el medico responsable (elegilo arriba)'}
+                  </span>
+                  .
                 </p>
                 <DiagnosisPicker
                   onSelect={(code) =>
@@ -1144,24 +1142,18 @@ export default function AdmissionPanelPage() {
               <div
                 className={scheduledOrder ? 'grid gap-4 md:grid-cols-[minmax(0,1fr)_200px]' : undefined}
               >
-                <select
+                <AvailableBedSelect
                   value={admissionForm.requested_bed_id ?? ''}
-                  onChange={(e) =>
-                    setAdmissionForm({ ...admissionForm, requested_bed_id: e.target.value || null })
+                  onChange={(bedId) =>
+                    setAdmissionForm((current) => ({ ...current, requested_bed_id: bedId || null }))
+                  }
+                  emptyLabel={
+                    scheduledOrder
+                      ? 'Registrar la orden sin reservar cama'
+                      : 'Confirmar ingreso sin cama asignada'
                   }
                   className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-teal-500"
-                >
-                  <option value="">
-                    {scheduledOrder
-                      ? 'Registrar la orden sin reservar cama'
-                      : 'Confirmar ingreso sin cama asignada'}
-                  </option>
-                  {availableBeds.map((bed) => (
-                    <option key={bed.id} value={bed.id}>
-                      {bed.code} - {bed.ward} Hab. {bed.room}
-                    </option>
-                  ))}
-                </select>
+                />
                 {scheduledOrder && (
                   <select
                     value={admissionForm.bed_reservation_expires_in_minutes ?? 1440}

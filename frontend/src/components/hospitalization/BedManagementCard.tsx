@@ -13,6 +13,7 @@ import type {
 import { invalidateHospitalization } from '@/api/queryKeys';
 import Modal from '@/components/Modal';
 import { BedStatusBadge } from '@/components/StatusBadges';
+import AvailableBedSelect from '@/components/beds/AvailableBedSelect';
 import {
   ActionButton,
   Card,
@@ -57,7 +58,6 @@ export function BedManagementCard({
   /** Cama a confirmar mientras se toman el contacto y los consentimientos. */
   const [arrivalBedId, setArrivalBedId] = useState<string | null>(null);
   const [selectedBedId, setSelectedBedId] = useState('');
-  const [ward, setWard] = useState('');
   const [expiresInMinutes, setExpiresInMinutes] = useState(120);
   const [transferBedId, setTransferBedId] = useState('');
   const [transferServiceId, setTransferServiceId] = useState('');
@@ -164,8 +164,6 @@ export function BedManagementCard({
   const activeReservation = reservations.find((item) => item.status === 'ACTIVE') ?? null;
   const currentBed = activeAssignment ? bedsById.get(activeAssignment.bed_id) : undefined;
   const availableBeds = availableQuery.data ?? [];
-  const wards = [...new Set(availableBeds.map((bed) => bed.ward))].sort();
-  const filteredBeds = ward ? availableBeds.filter((bed) => bed.ward === ward) : availableBeds;
   const transferBeds = availableBeds.filter((bed) => bed.id !== activeAssignment?.bed_id);
   const isOpen = OPEN_STATUSES.includes(hosp.status);
   const busy =
@@ -324,44 +322,21 @@ export function BedManagementCard({
       <Modal
         open={reserveOpen}
         onClose={() => setReserveOpen(false)}
-        title="Camas compatibles disponibles"
+        title="Camas libres en todos los centros"
+        maxWidth="max-w-2xl"
       >
         <div className="space-y-4">
           <p className="text-sm text-slate-500">
             Reservar mantiene la cama para este paciente sin ocuparla; confirmar el ingreso la
             marca como ocupada e inicia la internacion.
           </p>
-          {wards.length > 1 && (
-            <Field label="Sector">
-              <select value={ward} onChange={(e) => setWard(e.target.value)} className={inputClass}>
-                <option value="">Todos los sectores</option>
-                {wards.map((item) => (
-                  <option key={item} value={item}>
-                    {item}
-                  </option>
-                ))}
-              </select>
-            </Field>
-          )}
-          <Field label="Cama">
-            {filteredBeds.length === 0 ? (
-              <p className="rounded-lg bg-amber-50 px-3 py-2 text-sm text-amber-700">
-                No hay camas disponibles en este momento.
-              </p>
-            ) : (
-              <select
-                value={selectedBedId}
-                onChange={(e) => setSelectedBedId(e.target.value)}
-                className={inputClass}
-              >
-                <option value="">Selecciona una cama...</option>
-                {filteredBeds.map((bed) => (
-                  <option key={bed.id} value={bed.id}>
-                    {bed.code} - {bed.ward} (Hab. {bed.room})
-                  </option>
-                ))}
-              </select>
-            )}
+          <Field label="Centro y cama">
+            <AvailableBedSelect
+              value={selectedBedId}
+              onChange={setSelectedBedId}
+              emptyLabel="Selecciona una cama..."
+              className={inputClass}
+            />
           </Field>
           <Field label="Vencimiento de la reserva (minutos)">
             <input

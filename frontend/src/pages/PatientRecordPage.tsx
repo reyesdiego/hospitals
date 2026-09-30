@@ -212,6 +212,12 @@ export default function PatientRecordPage() {
                       </span>{' '}
                       {entry.description}
                     </p>
+                    <p className="text-xs text-slate-500">
+                      Indicado por{' '}
+                      <span className="font-semibold text-slate-600">
+                        {entry.diagnosed_by_name ?? 'profesional sin registrar'}
+                      </span>
+                    </p>
                     <p className="text-xs text-slate-400">
                       {DIAGNOSIS_STAGE_LABELS[entry.stage]} ·{' '}
                       {formatDateTime(entry.diagnosed_at)}

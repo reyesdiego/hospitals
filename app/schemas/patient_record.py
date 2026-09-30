@@ -47,6 +47,7 @@ class PatientDiagnosisRead(BaseModel):
     role: DiagnosisRole
     stage: DiagnosisStage
     diagnosed_at: datetime
+    diagnosed_by_name: str | None
     notes: str | None
 
 

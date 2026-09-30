@@ -16,6 +16,7 @@ export interface HospitalizationDiagnosisRead {
   role: DiagnosisRole;
   stage: DiagnosisStage;
   diagnosed_by_id: string | null;
+  diagnosed_by_name: string | null;
   recorded_by_user_id: string | null;
   recorded_by_user_name: string | null;
   diagnosed_at: string;

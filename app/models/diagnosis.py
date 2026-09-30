@@ -17,6 +17,7 @@ y lo que resultó es parte de la historia.
 import enum
 import uuid
 from datetime import datetime
+from typing import TYPE_CHECKING
 
 from sqlalchemy import (
     Boolean,
@@ -32,6 +33,9 @@ from sqlalchemy import (
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.models.base import Base, TimestampMixin, UUIDMixin
+
+if TYPE_CHECKING:
+    from app.models.professional import Professional
 
 
 class DiagnosisLevel(str, enum.Enum):
@@ -125,7 +129,8 @@ class HospitalizationDiagnosis(UUIDMixin, TimestampMixin, Base):
         default=DiagnosisStage.ADMISSION,
         server_default=DiagnosisStage.ADMISSION.value,
     )
-    #: El profesional que lo diagnosticó; puede no tener usuario en el sistema.
+    #: El profesional que lo indicó; puede no tener usuario en el sistema. Lo exige la API
+    #: al asentarlo: solo lo cargado antes de que fuera obligatorio puede no tenerlo.
     diagnosed_by_id: Mapped[uuid.UUID | None] = mapped_column(
         ForeignKey(
             "professionals.id",
@@ -144,6 +149,15 @@ class HospitalizationDiagnosis(UUIDMixin, TimestampMixin, Base):
     notes: Mapped[str | None] = mapped_column(Text)
 
     diagnosis_code: Mapped[DiagnosisCode] = relationship()
+    # Se trae siempre: en cada lugar donde se muestra el diagnóstico se muestra quién lo indicó.
+    diagnosed_by: Mapped["Professional | None"] = relationship(lazy="joined")
+
+    @property
+    def diagnosed_by_name(self) -> str | None:
+        professional = self.diagnosed_by
+        if professional is None:
+            return None
+        return f"{professional.last_name}, {professional.first_name}"
 
     __table_args__ = (
         # El mismo código no se asienta dos veces en el mismo momento de la internación.

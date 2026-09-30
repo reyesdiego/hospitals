@@ -7,7 +7,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.exceptions import DomainError, integrity_conflict
-from app.models.admission import Admission, AdmissionStatus
+from app.models.admission import Admission, AdmissionStatus, Episode
 from app.models.audit import HospitalizationEventType
 from app.models.bed import (
     Bed,
@@ -31,6 +31,27 @@ from app.services.service_assignment import reassign_service
 
 ACTIVE_HOSPITALIZATION_STATUSES = OPEN_HOSPITALIZATION_STATUSES
 ASSIGNABLE_BED_STATUS = BedStatus.AVAILABLE
+
+
+async def move_to_bed_facility(
+    session: AsyncSession,
+    hospitalization: Hospitalization,
+    bed: Bed,
+) -> None:
+    """La internación queda en el centro de la cama que toma el paciente.
+
+    Antes de ocupar la primera cama se elige entre las libres de todos los centros: si la
+    que se reserva o se ocupa es de otro, la internación y su episodio pasan a ese centro.
+    Los traslados no pasan por acá: mover de centro a alguien ya internado es una derivación.
+    """
+
+    if hospitalization.facility_id == bed.facility_id:
+        return
+    hospitalization.facility_id = bed.facility_id
+    if hospitalization.episode_id:
+        episode = await session.get(Episode, hospitalization.episode_id)
+        if episode:
+            episode.facility_id = bed.facility_id
 
 
 class BedAssignmentService:
@@ -305,8 +326,7 @@ class BedAssignmentService:
         )
         hospitalization.status = HospitalizationStatus.IN_PROGRESS
         hospitalization.admitted_at = hospitalization.admitted_at or now
-        if hospitalization.facility_id is None:
-            hospitalization.facility_id = bed.facility_id
+        await move_to_bed_facility(self.session, hospitalization, bed)
         await self._mark_admission_admitted(
             hospitalization_id,
             hospitalization.admitted_at,

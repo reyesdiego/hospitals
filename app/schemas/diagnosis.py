@@ -93,6 +93,8 @@ class HospitalizationDiagnosisRead(ORMModel):
     role: DiagnosisRole
     stage: DiagnosisStage
     diagnosed_by_id: uuid.UUID | None
+    #: "Apellido, Nombre" del profesional que lo indicó.
+    diagnosed_by_name: str | None
     recorded_by_user_id: uuid.UUID | None
     recorded_by_user_name: str | None
     diagnosed_at: datetime

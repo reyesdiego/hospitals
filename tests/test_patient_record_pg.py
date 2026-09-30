@@ -95,7 +95,11 @@ async def full_stay(factory):
     async with factory() as session:
         await HospitalizationDiagnosisService(session).add(
             hospitalization_id,
-            HospitalizationDiagnosisCreate(code="J15", role=DiagnosisRole.PRINCIPAL),
+            HospitalizationDiagnosisCreate(
+                diagnosed_by_id=scenario.practitioner_id,
+                code="J15",
+                role=DiagnosisRole.PRINCIPAL,
+            ),
         )
     async with factory() as session:
         await DischargePrescriptionService(session).add(

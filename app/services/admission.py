@@ -158,7 +158,15 @@ class AdmissionWorkflowService:
             await record_diagnoses(
                 self.session,
                 hospitalization,
-                payload.diagnoses,
+                # Si no se dice otro, los de ingreso los indica el médico responsable.
+                [
+                    item
+                    if item.diagnosed_by_id
+                    else item.model_copy(
+                        update={"diagnosed_by_id": payload.responsible_physician_id}
+                    )
+                    for item in payload.diagnoses
+                ],
                 stage=DiagnosisStage.ADMISSION,
                 at=now,
             )

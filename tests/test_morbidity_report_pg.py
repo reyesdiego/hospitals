@@ -64,10 +64,18 @@ async def discharged_with(
         await session.commit()
     async with factory() as session:
         diagnoses = [
-            HospitalizationDiagnosisCreate(code=principal, role=DiagnosisRole.PRINCIPAL)
+            HospitalizationDiagnosisCreate(
+                diagnosed_by_id=scenario.practitioner_id,
+                code=principal,
+                role=DiagnosisRole.PRINCIPAL,
+            )
         ]
         if secondary:
-            diagnoses.append(HospitalizationDiagnosisCreate(code=secondary))
+            diagnoses.append(
+                HospitalizationDiagnosisCreate(
+                    diagnosed_by_id=scenario.practitioner_id, code=secondary
+                )
+            )
         await HospitalizationService(session).clinical_discharge(
             hospitalization_id,
             ClinicalDischargeCreate(discharge_type=discharge_type, diagnoses=diagnoses),
@@ -175,7 +183,11 @@ def test_the_period_and_the_stage_narrow_the_report():
         async with factory() as session:
             await HospitalizationDiagnosisService(session).add(
                 hospitalization_id,
-                HospitalizationDiagnosisCreate(code="E11", role=DiagnosisRole.PRINCIPAL),
+                HospitalizationDiagnosisCreate(
+                    diagnosed_by_id=scenario.practitioner_id,
+                    code="E11",
+                    role=DiagnosisRole.PRINCIPAL,
+                ),
             )
         async with factory() as check:
             # El informe recorta por fecha local, no por UTC.

@@ -489,7 +489,15 @@ class HospitalizationService:
         await record_diagnoses(
             self.session,
             hospitalization,
-            payload.diagnoses,
+            # Si no se dice otro, los de egreso los indica el médico que da el alta.
+            [
+                item
+                if item.diagnosed_by_id
+                else item.model_copy(
+                    update={"diagnosed_by_id": payload.ordered_by_practitioner_id}
+                )
+                for item in payload.diagnoses
+            ],
             stage=DiagnosisStage.DISCHARGE,
             at=now,
         )

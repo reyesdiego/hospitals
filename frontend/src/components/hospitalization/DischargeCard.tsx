@@ -417,8 +417,14 @@ export function DischargeCard({
             </p>
             <p className="mb-2 text-xs text-slate-500">
               Los de ingreso quedan como estan: la diferencia entre lo que se sospecho y lo
-              que resulto es parte de la historia.
+              que resulto es parte de la historia. Los de egreso quedan indicados por el medico
+              que indica el alta.
             </p>
+            {dischargeDiagnoses.length > 0 && !practitionerId && (
+              <p className="mb-2 rounded-lg bg-amber-50 px-3 py-2 text-xs font-medium text-amber-700">
+                Elegi el medico que indica el alta: es quien firma estos diagnosticos.
+              </p>
+            )}
             <DiagnosisPicker
               onSelect={(code) =>
                 setDischargeDiagnoses((current) =>
@@ -490,7 +496,11 @@ export function DischargeCard({
             <ActionButton tone="neutral" onClick={() => setDischargeOpen(false)}>
               Cancelar
             </ActionButton>
-            <ActionButton tone="primary" type="submit" disabled={busy}>
+            <ActionButton
+              tone="primary"
+              type="submit"
+              disabled={busy || (dischargeDiagnoses.length > 0 && !practitionerId)}
+            >
               {clinicalMutation.isPending ? 'Registrando...' : 'Registrar alta clinica'}
             </ActionButton>
           </div>

@@ -186,6 +186,20 @@ async def require_codifiable(session: AsyncSession, code: str) -> DiagnosisCode:
     return found
 
 
+async def require_diagnosing_professional(
+    session: AsyncSession,
+    professional_id: uuid.UUID | None,
+) -> Professional:
+    """Todo diagnóstico dice qué profesional lo indicó: sin eso no se asienta."""
+
+    if professional_id is None:
+        raise DomainError("Indique el profesional que hizo el diagnóstico", 422)
+    professional = await session.get(Professional, professional_id)
+    if not professional:
+        raise DomainError("Profesional inexistente", 404)
+    return professional
+
+
 async def record_diagnoses(
     session: AsyncSession,
     hospitalization: Hospitalization,
@@ -222,10 +236,7 @@ async def record_diagnoses(
     entries: list[HospitalizationDiagnosis] = []
     for payload in payloads:
         code = await require_codifiable(session, payload.code)
-        if payload.diagnosed_by_id and not await session.get(
-            Professional, payload.diagnosed_by_id
-        ):
-            raise DomainError("Profesional inexistente", 404)
+        professional = await require_diagnosing_professional(session, payload.diagnosed_by_id)
         entry = HospitalizationDiagnosis(
             hospitalization_id=hospitalization.id,
             diagnosis_code_id=code.id,
@@ -234,7 +245,8 @@ async def record_diagnoses(
             description=code.description,
             role=payload.role,
             stage=stage,
-            diagnosed_by_id=payload.diagnosed_by_id,
+            diagnosed_by_id=professional.id,
+            diagnosed_by=professional,
             recorded_by_user_id=user.id,
             recorded_by_user_name=user.name,
             diagnosed_at=payload.diagnosed_at or now,
@@ -367,10 +379,9 @@ class HospitalizationDiagnosisService:
                 action="Corregir un diagnóstico",
             )
             entry = await self._require_entry(hospitalization_id, entry_id)
-            if payload.diagnosed_by_id and not await self.session.get(
-                Professional, payload.diagnosed_by_id
-            ):
-                raise DomainError("Profesional inexistente", 404)
+            professional = await require_diagnosing_professional(
+                self.session, payload.diagnosed_by_id
+            )
             if payload.role != entry.role:
                 await require_free_principal(
                     self.session,
@@ -379,7 +390,8 @@ class HospitalizationDiagnosisService:
                     stage=entry.stage,
                 )
             entry.role = payload.role
-            entry.diagnosed_by_id = payload.diagnosed_by_id
+            entry.diagnosed_by_id = professional.id
+            entry.diagnosed_by = professional
             entry.notes = payload.notes
             await self.session.flush()
             return entry

@@ -14,5 +14,6 @@ export interface PatientDiagnosisRead {
   role: DiagnosisRole;
   stage: DiagnosisStage;
   diagnosed_at: string;
+  diagnosed_by_name: string | null;
   notes: string | null;
 }

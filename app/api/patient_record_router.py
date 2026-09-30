@@ -75,6 +75,7 @@ async def get_patient_record(patient_id: uuid.UUID, session: DbSession):
                 role=entry.role,
                 stage=entry.stage,
                 diagnosed_at=entry.diagnosed_at,
+                diagnosed_by_name=entry.diagnosed_by_name,
                 notes=entry.notes,
             )
             for entry in record.diagnoses

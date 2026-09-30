@@ -1,5 +1,6 @@
 """Una orden médica programada no admite nada clínico hasta que el paciente llega."""
 
+import uuid
 from decimal import Decimal
 
 import pytest
@@ -18,8 +19,10 @@ from app.models.admission import (
 )
 from app.models.bed import Bed, BedReservation, BedReservationStatus, BedStatus
 from app.models.care_team import CareTeamRole
+from app.models.facility import Facility
 from app.models.hospitalization import Hospitalization, HospitalizationStatus
 from app.models.prescription import PrescriptionKind
+from app.models.room import Room
 from app.models.treatment import MedicationRoute
 from app.schemas.domain import AdmissionArrivalCreate, AdmissionCancelCreate
 from app.schemas.practice import HospitalizationPracticeCreate
@@ -29,6 +32,7 @@ from app.schemas.workflow import CareTeamMemberCreate, ChargeItemCreate, Service
 from app.services.account import AccountService
 from app.services.admission import AdmissionWorkflowService
 from app.services.bed_assignment import BedAssignmentService
+from app.services.bed_reservation import BedReservationService
 from app.services.hospitalization import HospitalizationService
 from app.services.practice import HospitalizationPracticeService
 from app.services.prescription import DischargePrescriptionService
@@ -243,3 +247,50 @@ def test_an_order_whose_patient_already_arrived_cannot_be_cancelled():
             return error.value.status_code
 
     assert run_db(case) == 409
+
+
+async def bed_in_another_facility(session):
+    facility = Facility(name="Sucursal Norte", code=f"SN-{uuid.uuid4().hex[:6]}")
+    session.add(facility)
+    await session.flush()
+    room = Room(facility_id=facility.id, code="201", ward="Cirugía")
+    session.add(room)
+    await session.flush()
+    bed = Bed(
+        facility_id=facility.id,
+        room_id=room.id,
+        code="201-1",
+        ward=room.ward,
+        status=BedStatus.AVAILABLE,
+    )
+    session.add(bed)
+    await session.commit()
+    return facility.id, bed.id
+
+
+def test_the_stay_moves_to_the_center_of_the_bed_it_is_given():
+    """Sin cama todavía se elige entre las libres de todos los centros."""
+
+    async def case(factory):
+        async with factory() as setup:
+            scenario = await build_scenario(setup)
+            other_facility_id, other_bed_id = await bed_in_another_facility(setup)
+        async with factory() as session:
+            # La orden se registra en el centro del escenario, sin reservar cama.
+            hospitalization_id = await hospitalization_from_admission(
+                session,
+                scenario,
+                origin=AdmissionOrigin.SCHEDULED_MEDICAL_ORDER,
+                admission_type=AdmissionType.SCHEDULED,
+            )
+        async with factory() as session:
+            await BedReservationService(session).reserve(hospitalization_id, other_bed_id)
+        async with factory() as check:
+            hospitalization = await check.get(Hospitalization, hospitalization_id)
+            episode = await check.get(Episode, hospitalization.episode_id)
+            return hospitalization.facility_id, episode.facility_id, other_facility_id
+
+    stay_facility, episode_facility, other_facility = run_db(case)
+
+    assert stay_facility == other_facility
+    assert episode_facility == other_facility
